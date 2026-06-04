@@ -1,36 +1,68 @@
-[gd_resource type="Theme" load_steps=6 format=2]
+[gd_resource type="Theme" load_steps=8 format=2]
 
 [ext_resource path="res://assets/fonts/LilitaOne-Regular.ttf" type="DynamicFontData" id=1]
 
-[sub_resource type="DynamicFont" id=17]
-size = 70
+[sub_resource type="DynamicFont" id=1]
+size = 75
+outline_size = 4
+outline_color = Color( 0.2, 0.5, 0.1, 1 )
+use_filter = true
 font_data = ExtResource( 1 )
 
-[sub_resource type="StyleBoxEmpty" id=16]
+[sub_resource type="StyleBoxEmpty" id=2]
 
-[sub_resource type="StyleBoxFlat" id=13]
-bg_color = Color( 0.415686, 0.901961, 0.117647, 1 )
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 20
-border_color = Color( 0.25098, 0.607843, 0.0862745, 1 )
-corner_radius_top_left = 50
-corner_radius_top_right = 50
-corner_radius_bottom_right = 50
-corner_radius_bottom_left = 50
+[sub_resource type="StyleBoxFlat" id=3]
+bg_color = Color( 0.490196, 0.94902, 0.156863, 1 )
+border_width_bottom = 14
+border_color = Color( 0.309804, 0.639216, 0.0862745, 1 )
+corner_radius_top_left = 55
+corner_radius_top_right = 55
+corner_radius_bottom_right = 55
+corner_radius_bottom_left = 55
+shadow_color = Color( 0.47, 0.84, 0.16, 0.35 )
+shadow_size = 14
+shadow_offset = Vector2( 0, 4 )
 
-[sub_resource type="StyleBoxFlat" id=15]
-bg_color = Color( 0.376471, 0.760784, 0.141176, 1 )
-corner_radius_top_left = 50
-corner_radius_top_right = 50
-corner_radius_bottom_right = 50
-corner_radius_bottom_left = 50
+[sub_resource type="StyleBoxFlat" id=4]
+bg_color = Color( 0.419608, 0.890196, 0.0862745, 1 )
+border_width_bottom = 14
+border_color = Color( 0.309804, 0.639216, 0.0862745, 1 )
+corner_radius_top_left = 55
+corner_radius_top_right = 55
+corner_radius_bottom_right = 55
+corner_radius_bottom_left = 55
+shadow_color = Color( 0.47, 0.84, 0.16, 0.35 )
+shadow_size = 14
+shadow_offset = Vector2( 0, 4 )
+
+[sub_resource type="StyleBoxFlat" id=5]
+content_margin_top = 14.0
+bg_color = Color( 0.419608, 0.890196, 0.0862745, 1 )
+corner_radius_top_left = 55
+corner_radius_top_right = 55
+corner_radius_bottom_right = 55
+corner_radius_bottom_left = 55
+shadow_color = Color( 0.47, 0.84, 0.16, 0.35 )
+shadow_size = 4
+shadow_offset = Vector2( 0, 1 )
+
+[sub_resource type="StyleBoxFlat" id=6]
+bg_color = Color( 0.08, 0.08, 0.12, 0.95 )
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color( 0.35, 0.75, 0.2, 0.55 )
+corner_radius_top_left = 40
+corner_radius_top_right = 40
+corner_radius_bottom_right = 40
+corner_radius_bottom_left = 40
 
 [resource]
 Button/colors/font_color = Color( 1, 1, 1, 1 )
-Button/fonts/font = SubResource( 17 )
-Button/styles/focus = SubResource( 16 )
-Button/styles/hover = SubResource( 13 )
-Button/styles/normal = SubResource( 13 )
-Button/styles/pressed = SubResource( 15 )
+Button/fonts/font = SubResource( 1 )
+Button/styles/focus = SubResource( 2 )
+Button/styles/hover = SubResource( 3 )
+Button/styles/normal = SubResource( 4 )
+Button/styles/pressed = SubResource( 5 )
+Panel/styles/panel = SubResource( 6 )

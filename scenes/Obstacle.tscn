@@ -1,21 +1,33 @@
-[gd_scene load_steps=5 format=2]
+[gd_scene load_steps=7 format=2]
 
 [ext_resource path="res://scripts/Obstacle.gd" type="Script" id=1]
 [ext_resource path="res://assets/models/flappy_bird_objects_cylinder.glb" type="PackedScene" id=2]
 
 [sub_resource type="CylinderShape" id=5]
+radius = 1.25
+
+[sub_resource type="CylinderShape" id=8]
+radius = 1.7
+height = 0.2
 
 [sub_resource type="CylinderMesh" id=6]
+
+[sub_resource type="BoxShape" id=7]
+extents = Vector3( 2, 8, 2 )
 
 [node name="Obstacle" type="Spatial"]
 transform = Transform( 1.01308, 0, 0, 0, 1.01308, 0, 0, 0, 1.01308, 0, 0, 0 )
 script = ExtResource( 1 )
 
 [node name="Cylinder" type="StaticBody" parent="."]
-transform = Transform( 2.0823, 0, 0, 0, 13.2252, 0, 0, 0, 2.0823, 0.361, 20, 0 )
+transform = Transform( 2.0823, 0, 0, 0, 25.0, 0, 0, 0, 2.0823, 0.361, 29, 0 )
 
 [node name="CollisionShape" type="CollisionShape" parent="Cylinder"]
 shape = SubResource( 5 )
+
+[node name="RimCollision" type="CollisionShape" parent="Cylinder"]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.9, 0 )
+shape = SubResource( 8 )
 
 [node name="MeshInstance" type="MeshInstance" parent="Cylinder"]
 visible = false
@@ -25,10 +37,14 @@ mesh = SubResource( 6 )
 transform = Transform( -1.72724, 7.76554e-08, 0, -3.49365e-08, -0.205517, 0, 0, 0, 1.72724, -0.0113371, 0.688093, -0.0637642 )
 
 [node name="Cylinder2" type="StaticBody" parent="."]
-transform = Transform( 2.0823, 0, 0, 0, 13.2252, 0, 0, 0, 2.0823, 0.361, -20, 0 )
+transform = Transform( 2.0823, 0, 0, 0, 25.0, 0, 0, 0, 2.0823, 0.361, -29, 0 )
 
 [node name="CollisionShape" type="CollisionShape" parent="Cylinder2"]
 shape = SubResource( 5 )
+
+[node name="RimCollision" type="CollisionShape" parent="Cylinder2"]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0 )
+shape = SubResource( 8 )
 
 [node name="MeshInstance" type="MeshInstance" parent="Cylinder2"]
 visible = false
@@ -42,4 +58,10 @@ wait_time = 15.0
 one_shot = true
 autostart = true
 
+[node name="ScoreArea" type="Area" parent="."]
+
+[node name="CollisionShape" type="CollisionShape" parent="ScoreArea"]
+shape = SubResource( 7 )
+
 [connection signal="timeout" from="DestroyTimer" to="." method="_on_DestroyTimer_timeout"]
+[connection signal="body_exited" from="ScoreArea" to="." method="_on_ScoreArea_body_exited"]

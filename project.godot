@@ -10,24 +10,35 @@ config_version=4
 
 [application]
 
-config/name="Flappy Bird 3D"
-config/description="A 3D Flappy Bird game featuring persistent high scores, dynamic obstacle spawning, and mobile-friendly touch controls."
+config/name="Flappy Bird Rush"
+config/description="A fast-paced 2D Flappy Bird game featuring dynamic speed escalation, persistent high scores, and mobile-friendly touch controls."
 run/main_scene="res://scenes/Main.tscn"
-boot_splash/image="res://assets/textures/splash.png"
-boot_splash/bg_color=Color( 0.0156863, 0, 0, 1 )
-config/icon="res://assets/textures/flappy.png"
-config/windows_native_icon="res://assets/textures/flappy.ico"
-config/version="0.2"
+boot_splash/image="res://assets/brand/splash.png"
+boot_splash/fullsize=false
+boot_splash/bg_color=Color( 0.247059, 0.576471, 0.780392, 1 )
+config/icon="res://assets/brand/icon.png"
+config/windows_native_icon="res://assets/brand/flappy_bird_rush.ico"
+config/version="1.0"
+
+[audio]
+
+mix_rate.web=44100
+driver/output_latency.web=50
+
+[autoload]
+
+Global="*res://scripts/Global.gd"
 
 [display]
 
 window/size/width=1080
 window/size/height=1920
-window/size/test_width=432
-window/size/test_height=768
+window/size/test_width=450
+window/size/test_height=800
+window/dpi/allow_hidpi=true
 window/handheld/orientation="portrait"
 window/stretch/mode="2d"
-window/stretch/aspect="keep"
+window/stretch/aspect="expand"
 
 [gui]
 
@@ -54,5 +65,4 @@ common/enable_pause_aware_picking=true
 
 quality/driver/driver_name="GLES2"
 vram_compression/import_etc=true
-quality/filters/msaa=3
 environment/default_environment="res://resources/default_env.tres"

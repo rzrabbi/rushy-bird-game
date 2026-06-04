@@ -18,3 +18,17 @@ mono_crash.*.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Build and Export outputs
+export_temp/
+build/
+dist/
+*.pck

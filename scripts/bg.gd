@@ -1,6 +1,5 @@
 extends Spatial
 
-# Parallax scrolling speed for the background.
 var speed = 3
 
 var starting_pos
@@ -10,13 +9,16 @@ func _ready():
 	set_physics_process(false)
 	
 func start():
-	$Timer.start()
 	set_physics_process(true)
 	
 func _physics_process(delta):
-	# Move the background leftward to create a sense of motion.
-	global_transform.origin += delta * speed * Vector3.LEFT
+	var current_game_speed = get_parent().game_speed if get_parent().get("game_speed") != null else 1.0
+	global_transform.origin += delta * speed * current_game_speed * Vector3.LEFT
 	
-func _on_Timer_timeout():
-	# Reset the background position to its starting point to loop seamlessly.
-	global_transform.origin = starting_pos
+	# Since each background piece is 20 units wide, snap back by 20 units 
+	# once we've traveled that distance to create a perfectly seamless, stutter-free loop.
+	if starting_pos.x - global_transform.origin.x >= 20.0:
+		global_transform.origin.x += 20.0
+
+func stop():
+	set_physics_process(false)
