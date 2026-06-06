@@ -11,6 +11,7 @@ func _on_DestroyTimer_timeout():
 
 func _ready():
 	if has_node("ScoreArea"):
+		$ScoreArea.collision_mask = 3 # Detect bird on layer 1 (normal) and layer 2 (invincible/god mode)
 		$ScoreArea.connect("body_entered", self, "_on_ScoreArea_body_entered")
 
 func _on_ScoreArea_body_entered(body):

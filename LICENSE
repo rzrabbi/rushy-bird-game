@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2023 Rezaye Rabbi
+Copyright (c) 2022 - 2026 Rezaye Rabbi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,39 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+ASSET LICENSING & EXCEPTIONS
+
+The MIT License above applies strictly to the original source code of this project.
+Other files, assets, and libraries contained within this repository are subject to
+their own respective licensing terms:
+
+1. Graphical & Visual Assets
+   All graphical assets (including but not limited to the character designs, pipe textures,
+   UI icons, background artwork, and game logos) are Copyright (c) 2022 - 2026 Rezaye Rabbi
+   & Borna Barua. All rights reserved.
+
+- You are not permitted to copy, distribute, modify, or reuse these visual assets
+  for commercial projects or separate game distributions without explicit written
+  permission from the copyright holders.
+
+2. Audio & Sound Assets
+   The background music and sound effects included in this project are third-party assets
+   used under their respective free or open licenses (e.g., Creative Commons, Royalty-Free).
+
+- These audio assets are the property of their respective creators.
+- You may not reuse, package, or distribute these audio assets commercially outside
+  of this project without complying with their original creator's license terms.
+
+3. Font Files & Typography
+   Any font files included in this repository (found under /assets/fonts or within addon
+   directories) are the property of their respective designers and are used under their original
+   licensing terms (e.g., SIL Open Font License). They are not covered by this project's MIT License.
+
+4. Third-Party Addons & Plugins
+   The /addons directory contains third-party tools, plugins, and libraries (such as the
+   Console, Gut, Anima, FontAwesome, etc.) that are not covered by the MIT License above.
+   These items are owned by their respective authors and are distributed under their own open-source
+   licenses (detailed within their respective folders).

@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=2]
 
 [ext_resource path="res://scripts/Obstacle.gd" type="Script" id=1]
-[ext_resource path="res://assets/models/flappy_bird_objects_cylinder.glb" type="PackedScene" id=2]
+[ext_resource path="res://assets/models/obstacle_cylinder.glb" type="PackedScene" id=2]
 
 [sub_resource type="CylinderShape" id=5]
 radius = 1.25
@@ -33,7 +33,7 @@ shape = SubResource( 8 )
 visible = false
 mesh = SubResource( 6 )
 
-[node name="flappy_bird_objects_cylinder2" parent="Cylinder" instance=ExtResource( 2 )]
+[node name="obstacle_cylinder2" parent="Cylinder" instance=ExtResource( 2 )]
 transform = Transform( -1.72724, 7.76554e-08, 0, -3.49365e-08, -0.205517, 0, 0, 0, 1.72724, -0.0113371, 0.688093, -0.0637642 )
 
 [node name="Cylinder2" type="StaticBody" parent="."]
@@ -50,7 +50,7 @@ shape = SubResource( 8 )
 visible = false
 mesh = SubResource( 6 )
 
-[node name="flappy_bird_objects_cylinder" parent="Cylinder2" instance=ExtResource( 2 )]
+[node name="obstacle_cylinder" parent="Cylinder2" instance=ExtResource( 2 )]
 transform = Transform( 1.72724, 0, 0, 0, 0.205517, 0, 0, 0, 1.72724, -0.0112329, -0.691927, -0.0637642 )
 
 [node name="DestroyTimer" type="Timer" parent="."]

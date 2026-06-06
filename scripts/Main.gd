@@ -7,15 +7,14 @@ var game_speed = 1.0
 
 var stats = {
 	"total_games": 0,
-	"lifetime_score": 0,
+	"high_score": 0,
 	"playtime": 0.0,
-	"total_jumps": 0,
 	"total_deaths": 0,
 	"total_revives": 0,
 	"total_distance": 0.0
 }
 var game_playing = false
-var mode_level = 0 # 0: OG, 1: Escalation
+var mode_level = 0 # 0: Classic, 1: Escalation
 var storage_error_shown = false
 var run_distance: float = 0.0
 var run_max_speed: float = 1.0
@@ -45,11 +44,10 @@ var game_over_panel: Panel
 var leaderboard_panel: Panel
 var logo_rect: TextureRect
 
-var debug_mode_active: bool = false
-var debug_label: Label
 
 var music_volume: float = 1.0
 var sfx_enabled: bool = true
+var cheats_used: bool = false
 
 var main_menu_bgm: AudioStreamPlayer
 var game_over_bgm: AudioStreamPlayer
@@ -75,8 +73,8 @@ func _ready():
 	# Warm up the DynamicFont cache on startup to prevent CPU spikes and audio stuttering on mobile web exports
 	var warm_fonts = [
 		[$UI/Control/Score, "0123456789+"],
-		[$UI/Control/SpeedLabel, "LEVEL UP!OG MODE classic rules pure skill Escalation It gets faster Good luck"],
-		[$UI/Control/MenuInfoLabel, "-1 HEALTH! YOUR BEST: (Lvl 1) OG"],
+		[$UI/Control/SpeedLabel, "LEVEL UP!CLASSIC MODE classic rules pure skill Escalation It gets faster Good luck"],
+		[$UI/Control/MenuInfoLabel, "-1 HEALTH! YOUR BEST: (Lvl 1) Classic"],
 		[$UI/Control.get_node_or_null("LevelProgressBar/LevelLabel"), "LEVEL 0123456789"]
 	]
 	for item in warm_fonts:
@@ -174,7 +172,7 @@ func _ready():
 		level_label = level_progress_bar.get_node_or_null("LevelLabel")
 	health_bar = $UI/Control.get_node_or_null("HealthBar")
 	if health_bar:
-		for i in range(max_health):
+		for _i in range(max_health):
 			var icon = TextureRect.new()
 			icon.texture = tex_health
 			icon.expand = true
@@ -283,17 +281,9 @@ func _ready():
 	stats_panel_node.add_child(disclaimer)
 
 	if OS.is_debug_build():
-		debug_label = Label.new()
-		# Use default system font (monospaced) for cleaner debug text
-		debug_label.add_color_override("font_color", Color(0.2, 1.0, 0.2)) # Hacker green
-		debug_label.add_color_override("font_color_shadow", Color(0, 0, 0, 0.8)) # Black shadow for contrast
-		debug_label.add_constant_override("shadow_offset_x", 1)
-		debug_label.add_constant_override("shadow_offset_y", 1)
-		debug_label.rect_scale = Vector2(3.0, 3.0) # Massive scale for high-res screens
-		debug_label.text = "DEBUG MODE OFF"
-		debug_label.rect_position = Vector2(10, 10)
-		debug_label.hide()
-		$UI.add_child(debug_label)
+		# Force aspect ratio to 'keep' on debug builds for easier layout testing on desktop resolutions
+		get_tree().set_screen_stretch(SceneTree.STRETCH_MODE_2D, SceneTree.STRETCH_ASPECT_KEEP, Vector2(1080, 1920))
+
 		
 		# Move floor to collision layer 2 for God Mode phasing
 		if has_node("MeshInstance/StaticBody"):
@@ -363,7 +353,6 @@ func _ready():
 	if Global.auto_start:
 		Global.auto_start = false
 		call_deferred("_on_Button_pressed", false)
-
 func _exit_tree():
 	save_hiscore()
 	
@@ -403,7 +392,7 @@ func load_hiscore():
 		
 	var content = file.get_var()
 	if typeof(content) == TYPE_DICTIONARY:
-		# Always start in OG mode, so we don't load the saved mode_level
+		# Always start in Classic mode, so we don't load the saved mode_level
 		if content.has("hiscores"):
 			hiscores = content.get("hiscores")
 		else:
@@ -431,29 +420,12 @@ func load_hiscore():
 		file.seek(0)
 		var old_content = file.get_64()
 		if old_content != null:
-			hiscores[0] = old_content # Assume OG
+			hiscores[0] = old_content # Assume Classic
 			
+	stats["high_score"] = hiscores[mode_level]
 	file.close()
 
 func _process(delta):
-	if OS.is_debug_build() and debug_mode_active and is_instance_valid(debug_label):
-		var mem = OS.get_dynamic_memory_usage() / 1024.0 / 1024.0
-		var is_god = "ON" if (has_node("Bird") and $Bird.is_invincible) else "OFF"
-		var stats = PoolStringArray([
-			"--- DEVELOPER MONITOR ---",
-			"FPS: " + str(Engine.get_frames_per_second()),
-			"Memory: %.2f MB" % mem,
-			"Resolution: " + str(OS.window_size.x) + "x" + str(OS.window_size.y),
-			"Game Speed Multiplier: %.2f" % game_speed,
-			"Current Level: " + str(current_speed_level),
-			"Time in Level: %.1fs / %.1fs" % [level_time_survived, time_to_next_level],
-			"Score: " + str(score),
-			"God Mode (I): " + is_god,
-			"",
-			"Commands: [L] Level Up | [H] Health | [C] Score"
-		])
-		debug_label.text = stats.join("\n")
-
 	if game_playing:
 		if mode_level == 1:
 			run_playtime += delta
@@ -524,7 +496,7 @@ func _on_ModeButton_pressed():
 	update_score_display()
 
 func get_mode_string() -> String:
-	if mode_level == 0: return "OG"
+	if mode_level == 0: return "Classic"
 	elif mode_level == 1: return "Escalation"
 	return "Unknown"
 
@@ -622,6 +594,10 @@ func play_revive_sound():
 
 func update_score_display():
 	$UI/Control/Score.text = String(score)
+	if not cheats_used:
+		if score >= hiscores[mode_level]:
+			hiscores[mode_level] = score
+		stats["high_score"] = hiscores[mode_level]
 	if menu_info_label:
 		if mode_level == 1:
 			menu_info_label.text = "YOUR BEST: " + String(hiscores[mode_level]) + " (Lvl " + str(highest_levels[mode_level]) + ")"
@@ -629,6 +605,9 @@ func update_score_display():
 			menu_info_label.text = "YOUR BEST: " + String(hiscores[mode_level])
 
 func _on_Button_pressed(play_sound: bool = true):
+	cheats_used = false
+	if has_node("UI/Control/Score"):
+		$UI/Control/Score.modulate = Color(1.0, 1.0, 1.0)
 	if play_sound and is_instance_valid(ui_button_click):
 		ui_button_click.play()
 	if is_instance_valid(main_menu_bgm):
@@ -679,7 +658,7 @@ func _on_Button_pressed(play_sound: bool = true):
 		if health_bar:
 			health_bar.show()
 	else:
-		speed_label.text = "OG MODE\nClassic rules. Pure skill."
+		speed_label.text = "CLASSIC MODE\nClassic rules. Pure skill."
 		if level_progress_bar:
 			level_progress_bar.hide()
 		if health_bar:
@@ -764,11 +743,11 @@ func _on_StatsButton_pressed():
 	for child in vbox.get_children():
 		child.queue_free()
 	
+	stats["high_score"] = hiscores[mode_level]
 	var stats_labels = [
 		["Total Games Played", str(stats["total_games"])],
-		["Lifetime Score", str(stats["lifetime_score"])],
+		["High Score", str(stats["high_score"])],
 		["Highest Level", str(highest_levels[1])],
-		["Total Jumps", str(stats["total_jumps"])],
 		["Total Deaths", str(stats["total_deaths"])],
 		["Total Revives", str(stats.get("total_revives", 0))],
 		["Distance Traveled", "%.0f m" % stats.get("total_distance", 0.0)],
@@ -926,9 +905,8 @@ func _on_ResetStats_pressed():
 	highest_levels = {0: 1, 1: 1}
 	stats = {
 		"total_games": 0,
-		"lifetime_score": 0,
+		"high_score": 0,
 		"playtime": 0.0,
-		"total_jumps": 0,
 		"total_deaths": 0,
 		"total_revives": 0,
 		"total_distance": 0.0
@@ -1012,9 +990,6 @@ func increment_score(obstacle_position: Vector3 = Vector3.ZERO):
 	if is_instance_valid(score_sound):
 		score_sound.play()
 	
-	if score >= hiscores[mode_level]:
-		hiscores[mode_level] = score
-	
 	update_score_display()
 
 func _on_StartButton_down():
@@ -1061,8 +1036,8 @@ func trigger_grounded_phase():
 			if mode_level == 1:
 				stats["total_distance"] = stats.get("total_distance", 0.0) + run_distance
 				stats["playtime"] = stats.get("playtime", 0.0) + run_playtime
-				stats["lifetime_score"] = stats.get("lifetime_score", 0) + score
-				save_hiscore()
+			stats["high_score"] = hiscores[mode_level]
+			save_hiscore()
 				
 			var score_str = String(score)
 			if mode_level == 1:
@@ -1371,37 +1346,4 @@ func _position_floating_text(float_txt, restored_icon, txt_tween):
 	
 	txt_tween.start()
 	txt_tween.connect("tween_all_completed", float_txt, "queue_free")
-
-
-func _input(event):
-	if OS.is_debug_build() and event is InputEventKey and event.pressed:
-		if event.scancode == KEY_F1:
-			debug_mode_active = !debug_mode_active
-			if debug_label:
-				debug_label.visible = debug_mode_active
-				
-		if debug_mode_active and game_playing:
-			if event.scancode == KEY_L:
-				# Mathematically simulate the game speed accelerating over the exact amount of time we are skipping
-				var time_skipped = time_to_next_level - level_time_survived
-				var sim_delta = 0.1
-				var steps = int(time_skipped / sim_delta)
-				var MAX_SPEED = 2.5
-				for i in range(steps):
-					game_speed += (MAX_SPEED - game_speed) * 0.003 * sim_delta
-					
-				# Force level up by fulfilling time requirement
-				level_time_survived = time_to_next_level
-			elif event.scancode == KEY_H:
-				# Refill health
-				trigger_health_refill_animation()
-			elif event.scancode == KEY_C:
-				# Add score
-				var pts = 1 if mode_level == 0 else current_speed_level
-				score += pts * 5
-				update_score_display()
-			elif event.scancode == KEY_I:
-				# Toggle Invincibility
-				if has_node("Bird"):
-					$Bird.set_invincible(!$Bird.is_invincible)
 

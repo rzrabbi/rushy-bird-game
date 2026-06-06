@@ -587,7 +587,7 @@ custom_fonts/font = SubResource( 33 )
 custom_styles/hover = SubResource( 21 )
 custom_styles/pressed = SubResource( 22 )
 custom_styles/normal = SubResource( 20 )
-text = "Mode: Normal"
+text = "Mode: Classic"
 
 [node name="BottomBar" type="Panel" parent="Control"]
 anchor_right = 1.0

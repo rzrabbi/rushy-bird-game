@@ -66,9 +66,7 @@ func jump():
 	if has_node("../BirdJump"):
 		$"../BirdJump".play()
 	
-	var main_node = get_parent()
-	if main_node and "stats" in main_node and "mode_level" in main_node and main_node.mode_level == 1:
-		main_node.stats["total_jumps"] += 1
+
 
 
 func start():
@@ -95,8 +93,8 @@ func _on_Bird_body_entered(body):
 			die(false)
 			$"..".trigger_grounded_phase()
 			# Explicitly hide the bird so it is absolutely not visible
-			if has_node("flappy_bird"):
-				$flappy_bird.hide()
+			if has_node("rushy_bird"):
+				$rushy_bird.hide()
 	else:
 		if is_dead:
 			return # Ignore extra pipe hits in the same frame if already dead
@@ -116,12 +114,12 @@ func _on_Bird_body_entered(body):
 			die(true)
 
 func blink_ghost():
-	if has_node("flappy_bird"):
+	if has_node("rushy_bird"):
 		var tween = Tween.new()
 		add_child(tween)
 		for i in range(4):
-			tween.interpolate_callback($flappy_bird, i * 0.2, "hide")
-			tween.interpolate_callback($flappy_bird, i * 0.2 + 0.1, "show")
+			tween.interpolate_callback($rushy_bird, i * 0.2, "hide")
+			tween.interpolate_callback($rushy_bird, i * 0.2 + 0.1, "show")
 		tween.start()
 		tween.connect("tween_all_completed", tween, "queue_free")
 
@@ -135,8 +133,8 @@ func disable_collision_deferred():
 	translation.z -= 2.0
 
 func destroy_body():
-	if has_node("flappy_bird"):
-		$flappy_bird.hide()
+	if has_node("rushy_bird"):
+		$rushy_bird.hide()
 	if has_node("../BirdPop"):
 		$"../BirdPop".play()
 	collision_layer = 0
@@ -145,8 +143,8 @@ func destroy_body():
 	stuck_timer = -999.0 # Prevent running again
 
 func vanish_silently():
-	if has_node("flappy_bird"):
-		$flappy_bird.hide()
+	if has_node("rushy_bird"):
+		$rushy_bird.hide()
 	collision_layer = 0
 	collision_mask = 0
 	mode = RigidBody.MODE_STATIC

@@ -8,16 +8,61 @@
 
 config_version=4
 
+_global_script_classes=[ {
+"base": "Reference",
+"class": "AnimaEasing",
+"language": "GDScript",
+"path": "res://addons/anima/core/easings.gd"
+}, {
+"base": "Node",
+"class": "AnimaNode",
+"language": "GDScript",
+"path": "res://addons/anima/core/node.gd"
+}, {
+"base": "Reference",
+"class": "AnimaNodesProperties",
+"language": "GDScript",
+"path": "res://addons/anima/utils/node_properties.gd"
+}, {
+"base": "Reference",
+"class": "AnimaStrings",
+"language": "GDScript",
+"path": "res://addons/anima/utils/strings.gd"
+}, {
+"base": "Tween",
+"class": "AnimaTween",
+"language": "GDScript",
+"path": "res://addons/anima/core/tween.gd"
+}, {
+"base": "Reference",
+"class": "GutHookScript",
+"language": "GDScript",
+"path": "res://addons/gut/hook_script.gd"
+}, {
+"base": "Node",
+"class": "GutTest",
+"language": "GDScript",
+"path": "res://addons/gut/test.gd"
+} ]
+_global_script_class_icons={
+"AnimaEasing": "",
+"AnimaNode": "",
+"AnimaNodesProperties": "",
+"AnimaStrings": "",
+"AnimaTween": "",
+"GutHookScript": "",
+"GutTest": ""
+}
+
 [application]
 
-config/name="Flappy Bird Rush"
-config/description="A fast-paced 2D Flappy Bird game featuring dynamic speed escalation, persistent high scores, and mobile-friendly touch controls."
+config/name="Rushy Bird"
+config/description="A fast-paced 2D Rushy Bird game featuring dynamic speed escalation, persistent high scores, and mobile-friendly touch controls."
 run/main_scene="res://scenes/Main.tscn"
 boot_splash/image="res://assets/brand/splash.png"
-boot_splash/fullsize=false
-boot_splash/bg_color=Color( 0.247059, 0.576471, 0.780392, 1 )
+boot_splash/bg_color=Color( 0.0784314, 0.0784314, 0.0784314, 1 )
 config/icon="res://assets/brand/icon.png"
-config/windows_native_icon="res://assets/brand/flappy_bird_rush.ico"
+config/windows_native_icon="res://assets/brand/rushy_bird.ico"
 config/version="1.0"
 
 [audio]
@@ -28,6 +73,8 @@ driver/output_latency.web=50
 [autoload]
 
 Global="*res://scripts/Global.gd"
+Console="*res://addons/console/Console.gd"
+Anima="*res://addons/anima/core/anima.gd"
 
 [display]
 
@@ -39,6 +86,10 @@ window/dpi/allow_hidpi=true
 window/handheld/orientation="portrait"
 window/stretch/mode="2d"
 window/stretch/aspect="expand"
+
+[editor_plugins]
+
+enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local_server/plugin.cfg" )
 
 [gui]
 
