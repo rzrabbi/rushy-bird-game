@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if the score is physically possible (e.g., under 10000 points)
+    function isRealisticScore(score) {
+      return score is int && score >= 0 && score < 10000;
+    }
+
+    // Leaderboard All-Time
+    match /leaderboard_rushybird_alltime/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 30
+        && request.resource.data.timestamp is int;
+        
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && request.resource.data.score >= resource.data.score // Allow updates if score is equal (e.g. name update) or greater
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 30
+        && request.resource.data.timestamp is int;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Leaderboard Seasonal
+    match /leaderboard_rushybird_seasonal/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 30
+        && request.resource.data.period is string
+        && request.resource.data.timestamp is int;
+        
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && request.resource.data.score >= resource.data.score // Allow updates if score is equal (e.g. name update) or greater
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 30
+        && request.resource.data.period is string
+        && request.resource.data.timestamp is int;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Player Stats
+    match /rushybird_player_stats/{userId} {
+      allow read: if true;
+      allow create, update: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 30
+        && request.resource.data.classic_highscore is int
+        && request.resource.data.escalation_highscore is int
+        && request.resource.data.escalation_highest_level is int
+        && request.resource.data.total_games is int
+        && request.resource.data.playtime is number
+        && request.resource.data.total_deaths is int
+        && request.resource.data.total_revives is int
+        && request.resource.data.total_distance is number
+        && request.resource.data.last_updated is int;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

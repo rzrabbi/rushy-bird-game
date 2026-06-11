@@ -2,6 +2,17 @@ tool
 extends EditorExportPlugin
 
 func _export_begin(features: PoolStringArray, is_debug: bool, path: String, flags: int):
+	# Pack secret_config.cfg to the exported PCK if it exists locally
+	var config_file = File.new()
+	if config_file.file_exists("res://secret_config.cfg"):
+		if config_file.open("res://secret_config.cfg", File.READ) == OK:
+			var data = config_file.get_buffer(config_file.get_len())
+			config_file.close()
+			add_file("res://secret_config.cfg", data, false)
+			print("Local Server: Successfully packaged res://secret_config.cfg to export.")
+		else:
+			printerr("Local Server: Failed to read res://secret_config.cfg for packaging.")
+
 	# Only execute this copy routine if exporting an HTML5 build
 	if path.ends_with(".html"):
 		var base_dir = path.get_base_dir()

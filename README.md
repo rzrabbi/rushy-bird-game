@@ -143,6 +143,8 @@ The console includes a built-in **Performance Monitor Panel** (toggled by runnin
 | `timescale` | `[scale]` | Sets the engine speed scale (e.g. `timescale 0.5` for slow-motion, `timescale 2.0` for fast-forward). |
 | `restart` | None | Instantly reloads the current scene. |
 | `clear_stats` | `confirm` | Permanently deletes all saved scores, statistics, and settings from the local machine (requires the `confirm` parameter). |
+| `reset_guest` | None | Wipes out guest details locally (Guest ID, player name, stats, and scores) and generates a new Guest ID, acting as a clean slate. |
+| `profile` | None | Prints current guest profile details (Guest ID, Player Name, and Firebase authentication status) to the console. |
 
 # Special Thanks
 

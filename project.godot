@@ -35,6 +35,101 @@ _global_script_classes=[ {
 "path": "res://addons/anima/core/tween.gd"
 }, {
 "base": "Reference",
+"class": "AuthProvider",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/auth_provider.gd"
+}, {
+"base": "AuthProvider",
+"class": "FacebookProvider",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/providers/facebook.gd"
+}, {
+"base": "HTTPRequest",
+"class": "FirebaseAuth",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/auth.gd"
+}, {
+"base": "Node",
+"class": "FirebaseDatabase",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/database/database.gd"
+}, {
+"base": "Node",
+"class": "FirebaseDatabaseReference",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/database/reference.gd"
+}, {
+"base": "Node",
+"class": "FirebaseDatabaseStore",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/database/database_store.gd"
+}, {
+"base": "Node",
+"class": "FirebaseDynamicLinks",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/dynamiclinks/dynamiclinks.gd"
+}, {
+"base": "Node",
+"class": "FirebaseFirestore",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/firestore/firestore.gd"
+}, {
+"base": "Node",
+"class": "FirebaseFunctions",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/functions/functions.gd"
+}, {
+"base": "Resource",
+"class": "FirebaseResource",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/database/resource.gd"
+}, {
+"base": "Node",
+"class": "FirebaseStorage",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/storage/storage.gd"
+}, {
+"base": "Reference",
+"class": "FirebaseUserData",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/user_data.gd"
+}, {
+"base": "Node",
+"class": "FirestoreCollection",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/firestore/firestore_collection.gd"
+}, {
+"base": "Node",
+"class": "FirestoreDocument",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/firestore/firestore_document.gd"
+}, {
+"base": "Reference",
+"class": "FirestoreQuery",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/firestore/firestore_query.gd"
+}, {
+"base": "Reference",
+"class": "FirestoreTask",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/firestore/firestore_task.gd"
+}, {
+"base": "Reference",
+"class": "FunctionTask",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/functions/function_task.gd"
+}, {
+"base": "AuthProvider",
+"class": "GitHubProvider",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/providers/github.gd"
+}, {
+"base": "AuthProvider",
+"class": "GoogleProvider",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/providers/google.gd"
+}, {
+"base": "Reference",
 "class": "GutHookScript",
 "language": "GDScript",
 "path": "res://addons/gut/hook_script.gd"
@@ -43,6 +138,26 @@ _global_script_classes=[ {
 "class": "GutTest",
 "language": "GDScript",
 "path": "res://addons/gut/test.gd"
+}, {
+"base": "Reference",
+"class": "StorageReference",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/storage/storage_reference.gd"
+}, {
+"base": "Reference",
+"class": "StorageTask",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/storage/storage_task.gd"
+}, {
+"base": "AuthProvider",
+"class": "TwitterProvider",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/auth/providers/twitter.gd"
+}, {
+"base": "Node",
+"class": "Utilities",
+"language": "GDScript",
+"path": "res://addons/godot-firebase/Utilities.gd"
 } ]
 _global_script_class_icons={
 "AnimaEasing": "",
@@ -50,8 +165,31 @@ _global_script_class_icons={
 "AnimaNodesProperties": "",
 "AnimaStrings": "",
 "AnimaTween": "",
+"AuthProvider": "",
+"FacebookProvider": "",
+"FirebaseAuth": "",
+"FirebaseDatabase": "",
+"FirebaseDatabaseReference": "",
+"FirebaseDatabaseStore": "",
+"FirebaseDynamicLinks": "",
+"FirebaseFirestore": "",
+"FirebaseFunctions": "",
+"FirebaseResource": "",
+"FirebaseStorage": "",
+"FirebaseUserData": "",
+"FirestoreCollection": "",
+"FirestoreDocument": "",
+"FirestoreQuery": "",
+"FirestoreTask": "",
+"FunctionTask": "",
+"GitHubProvider": "",
+"GoogleProvider": "",
 "GutHookScript": "",
-"GutTest": ""
+"GutTest": "",
+"StorageReference": "",
+"StorageTask": "",
+"TwitterProvider": "",
+"Utilities": ""
 }
 
 [application]
@@ -75,13 +213,15 @@ driver/output_latency.web=50
 Global="*res://scripts/Global.gd"
 Console="*res://addons/console/Console.gd"
 Anima="*res://addons/anima/core/anima.gd"
+Firebase="*res://addons/godot-firebase/firebase/firebase.tscn"
+FirebaseManager="*res://scripts/FirebaseManager.gd"
 
 [display]
 
 window/size/width=1080
 window/size/height=1920
-window/size/test_width=450
-window/size/test_height=800
+window/size/test_width=422
+window/size/test_height=750
 window/dpi/allow_hidpi=true
 window/handheld/orientation="portrait"
 window/stretch/mode="2d"
@@ -89,7 +229,7 @@ window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local_server/plugin.cfg" )
+enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local_server/plugin.cfg" )
 
 [gui]
 

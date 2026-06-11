@@ -36,6 +36,20 @@ var mobile_last_tap_time := 0
 
 
 func _ready():
+	if OS.has_feature("JavaScript"):
+		JavaScript.eval("""
+			(function() {
+				if (typeof HTMLElement !== 'undefined' && HTMLElement.prototype && HTMLElement.prototype.focus) {
+					var origFocus = HTMLElement.prototype.focus;
+					HTMLElement.prototype.focus = function(options) {
+						options = options || {};
+						options.preventScroll = true;
+						origFocus.call(this, options);
+					};
+				}
+			})();
+		""")
+
 	var canvas_layer := CanvasLayer.new()
 	canvas_layer.layer = 3
 	add_child(canvas_layer)
@@ -195,6 +209,8 @@ func _ready():
 		add_command("restart", self, "cmd_restart", 0)
 		add_command("timescale", self, "cmd_timescale", 1)
 		add_command("clear_stats", self, "cmd_clear_stats", 1)
+		add_command("reset_guest", self, "cmd_reset_guest", 0)
+		add_command("profile", self, "cmd_profile", 0)
 		
 		add_command_autocomplete_list("timescale", ["0.25", "0.5", "1.0", "2.0", "3.0"])
 		add_command_autocomplete_list("set_level", ["1", "5", "10", "15", "20"])
@@ -554,7 +570,9 @@ func cmd_help():
 		print_line("  [b]kill[/b] - Instantly kill the bird.")
 		print_line("  [b]timescale [scale][/b] - Set engine speed (e.g. 0.5).")
 		print_line("  [b]restart[/b] - Restart game session.")
-		print_line("  [b]clear_stats [confirm][/b] - Reset all high scores and stats.\n")
+		print_line("  [b]clear_stats [confirm][/b] - Reset all high scores and stats.")
+		print_line("  [b]reset_guest[/b] - Wipes local stats and creates a new anonymous Firebase profile.")
+		print_line("  [b]profile[/b] - Prints player name, Firebase UID, and auth status.\n")
 
 
 func cmd_stats():
@@ -569,6 +587,15 @@ func cmd_stats():
 		print_line("Total Revives: " + str(main_node.stats.get("total_revives", 0)))
 		print_line("Distance Traveled: %.1f m" % main_node.stats.get("total_distance", 0.0))
 		print_line("Total Playtime: %.1f min" % (main_node.stats.get("playtime", 0.0) / 60.0))
+		
+		var sync_status = "[color=#ffff66]Pending[/color]"
+		if main_node.last_sync_attempted:
+			if main_node.last_sync_success:
+				var t = OS.get_datetime_from_unix_time(main_node.last_sync_timestamp)
+				sync_status = "[color=#88ff88]Synced (%02d:%02d:%02d)[/color]" % [t.hour, t.minute, t.second]
+			else:
+				sync_status = "[color=#ff8888]Failed[/color]"
+		print_line("Cloud Sync: " + sync_status)
 	else:
 		print_line("Error: Main node not found.")
 
@@ -797,8 +824,68 @@ func cmd_clear_stats(confirm_str: String = ""):
 		main_node.update_score_display()
 		if main_node.has_method("update_health_display"):
 			main_node.update_health_display()
+		main_node.save_hiscore()
 	print_line("All saved data and high scores have been successfully deleted.")
 
+
+func cmd_reset_guest():
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if is_instance_valid(main_node):
+		randomize()
+		Global.player_name = "Player" + str(randi() % 900000 + 100000)
+		Global.has_changed_name = false
+		main_node.hiscores = {0: 0, 1: 0}
+		main_node.highest_levels = {0: 1, 1: 1}
+		main_node.score = 0
+		for key in main_node.stats.keys():
+			if typeof(main_node.stats[key]) == TYPE_INT:
+				main_node.stats[key] = 0
+			elif typeof(main_node.stats[key]) == TYPE_REAL:
+				main_node.stats[key] = 0.0
+		main_node.update_score_display()
+		if main_node.has_method("update_health_display"):
+			main_node.update_health_display()
+			
+		# Reset Firebase Auth session and clear local credentials
+		if Firebase.Auth.has_method("remove_auth"):
+			Firebase.Auth.remove_auth()
+		Firebase.Auth.auth = {}
+		FirebaseManager.user_id = ""
+		FirebaseManager.is_logged_in = false
+		Firebase.Auth.login_anonymous()
+		
+		main_node.save_hiscore()
+		print_line("[color=#88ff88]Player name reset to: " + Global.player_name + "[/color]")
+		print_line("[color=#88ff88]Player name and stats have been completely cleared.[/color]")
+		print_line("[color=#88ff88]Firebase session reset; logging in anonymously...[/color]")
+		print_line("[color=#88ff88]You will now appear as a brand new player on the leaderboard.[/color]")
+	else:
+		print_line("Error: Main node not found.")
+
+
+func cmd_profile():
+	print_line("--- CURRENT PROFILE ---")
+	
+	var p_name = Global.player_name
+	if p_name == "":
+		p_name = "[None - Will prompt on next High Score]"
+	
+	var name_status = " (Default Guest)"
+	if Global.has_changed_name:
+		name_status = " (Modified/Set)"
+	print_line("Player Name: " + p_name + name_status)
+	
+	if FirebaseManager.is_logged_in:
+		var email = ""
+		if Firebase.Auth.auth:
+			email = Firebase.Auth.auth.get("email", "")
+		if email != "":
+			print_line("Authentication Status: [color=#88ff88]Authenticated (" + email + ")[/color]")
+		else:
+			print_line("Authentication Status: [color=#88ff88]Authenticated (Guest)[/color]")
+		print_line("Firebase UID: " + FirebaseManager.user_id)
+	else:
+		print_line("Authentication Status: [color=#ff8888]Not Authenticated / Connecting...[/color]")
 
 func add_input_history(text : String):
 	if (!console_history.size() || text != console_history.back()): # Don't add consecutive duplicates

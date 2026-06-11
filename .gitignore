@@ -2,3 +2,12 @@
 export_presets.cfg
 .vscode/
 scripts/tools/
+devlog/
+secret_config.cfg
+
+# Admin Dashboard
+dashboard/
+
+# Graphify
+graphify-out/
+.graphifyignore
