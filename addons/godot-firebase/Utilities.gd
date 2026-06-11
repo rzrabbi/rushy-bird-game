@@ -218,6 +218,8 @@ static func is_field_timestamp(field : Dictionary) -> bool:
 static func fix_http_request(http_request):
 	if is_web():
 		http_request.accept_gzip = false
+	else:
+		http_request.use_threads = true
 
 static func is_web() -> bool:
 	return OS.get_name() in ["HTML5", "Web"]

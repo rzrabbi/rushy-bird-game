@@ -329,8 +329,8 @@ var _temp_all_time = []
 var _temp_seasonal = []
 
 func _on_all_time_result(result):
-	_temp_all_time = []
 	if result != null and typeof(result) == TYPE_ARRAY:
+		_temp_all_time = []
 		for doc in result:
 			if typeof(doc) != TYPE_OBJECT or not doc.has_method("keys"):
 				print("WARNING: doc is not a valid FirestoreDocument! Type: ", typeof(doc), " Value: ", doc)
@@ -343,8 +343,8 @@ func _on_all_time_result(result):
 	_check_leaderboard_complete()
 
 func _on_seasonal_result(result):
-	_temp_seasonal = []
 	if result != null and typeof(result) == TYPE_ARRAY:
+		_temp_seasonal = []
 		for doc in result:
 			if typeof(doc) != TYPE_OBJECT or not doc.has_method("keys"):
 				print("WARNING: doc is not a valid FirestoreDocument! Type: ", typeof(doc), " Value: ", doc)

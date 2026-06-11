@@ -574,7 +574,7 @@ func _ready():
 func _exit_tree():
 	save_hiscore()
 	
-func save_hiscore():
+func save_hiscore(sync_to_cloud: bool = true):
 	var file = File.new()
 	var err = file.open("user://save_game.dat", File.WRITE)
 	if err != OK or not file.is_open():
@@ -595,7 +595,8 @@ func save_hiscore():
 	file.store_var(data)
 	file.close()
 	
-	FirebaseManager.submit_stats(stats, hiscores, highest_levels, Global.player_name)
+	if sync_to_cloud:
+		FirebaseManager.submit_stats(stats, hiscores, highest_levels, Global.player_name)
 
 func load_hiscore():
 	var file = File.new()
@@ -654,7 +655,7 @@ func load_hiscore():
 	if Global.player_name == "":
 		randomize()
 		Global.player_name = "Player" + str(randi() % 900000 + 100000)
-	save_hiscore()
+	save_hiscore(false)
 
 func _process(delta):
 	if game_playing:
@@ -1356,7 +1357,7 @@ func _on_CloseSettings_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 	
-	save_hiscore()
+	save_hiscore(false)
 	active_panel_name = ""
 	settings_panel.hide()
 	_show_active_screen()
@@ -1368,7 +1369,7 @@ func _on_MusicSlider_value_changed(value: float):
 	var db = raw_db - 10.0 if raw_db > -79.0 else -80.0
 	if is_instance_valid(main_menu_bgm):
 		main_menu_bgm.volume_db = db
-	save_hiscore()
+	save_hiscore(false)
 
 func _apply_sfx_volume():
 	var db = 0.0 if sfx_enabled else -80.0
@@ -1380,7 +1381,7 @@ func _apply_sfx_volume():
 func _on_SfxToggle_toggled(button_pressed: bool):
 	sfx_enabled = button_pressed
 	_apply_sfx_volume()
-	save_hiscore()
+	save_hiscore(false)
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 

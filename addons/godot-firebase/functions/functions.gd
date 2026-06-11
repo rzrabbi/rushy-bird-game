@@ -112,6 +112,7 @@ func _pooled_request(task : FunctionTask) -> void:
 
 	if not http_request:
 		http_request = HTTPRequest.new()
+		Utilities.fix_http_request(http_request)
 		_http_request_pool.append(http_request)
 		add_child(http_request)
 		http_request.connect("request_completed", self, "_on_pooled_request_completed", [http_request])

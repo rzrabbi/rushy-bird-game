@@ -46,6 +46,7 @@ var _google_auth_request_url : String = "https://accounts.google.com/o/oauth2/v2
 var _config : Dictionary = {}
 var auth : Dictionary = {}
 var _needs_refresh : bool = false
+var _refresh_countdown_id : int = 0
 var is_busy : bool = false
 var has_child : bool = false
 
@@ -144,6 +145,7 @@ var _local_uri : String = "http://localhost:%s/"%_local_port
 var _local_provider : AuthProvider = AuthProvider.new()
 
 func _ready() -> void:
+	use_threads = true
 	tcp_timer.wait_time = tcp_timeout
 	tcp_timer.connect("timeout", self, "_tcp_stream_timer")
 
@@ -598,7 +600,21 @@ func begin_refresh_countdown() -> void:
 		auth["localid"] = auth.userid
 	_needs_refresh = true
 	emit_signal("token_refresh_succeeded", auth)
-	yield(get_tree().create_timer(float(expires_in)), "timeout")
+	
+	_refresh_countdown_id += 1
+	var current_id = _refresh_countdown_id
+	
+	var wait_time = float(expires_in) - 300.0 # Refresh 5 minutes before expiry
+	if wait_time < 0.0:
+		wait_time = float(expires_in) * 0.9 # Fallback if expires_in is very small
+	if wait_time < 1.0:
+		wait_time = 1.0
+		
+	yield(get_tree().create_timer(wait_time), "timeout")
+	
+	if current_id != _refresh_countdown_id:
+		return # An older timer fired, ignore it!
+		
 	_refresh_request_body.refresh_token = refresh_token
 	request(_refresh_request_base_url + _refresh_request_url, _headers, true, HTTPClient.METHOD_POST, JSON.print(_refresh_request_body))
 
