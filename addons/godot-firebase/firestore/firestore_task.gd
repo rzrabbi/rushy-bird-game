@@ -100,7 +100,7 @@ func _on_request_completed(result : int, response_code : int, headers : PoolStri
 
 		# Silence GET 404 errors since they are common when checking if a document exists
 		if not (action == Task.TASK_GET and response_code == 404):
-			Firebase._printerr("Action in error was: " + str(action) + " " + description)
+			Firebase._printerr("Action in error was: " + str(action) + " " + description + " | result: " + str(result) + " | response_code: " + str(response_code))
 			build_error(bod, action, description)
 		else:
 			data = null

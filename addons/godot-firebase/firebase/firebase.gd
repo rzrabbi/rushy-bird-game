@@ -100,19 +100,22 @@ func _load_config() -> void:
 		pass
 	else:
 		var env = ConfigFile.new()
-		var err = env.load("res://secret_config.cfg")
+		var err = env.load("res://addons/godot-firebase/.env")
 		if err == OK:
 			for key in _config.keys():
 				if key == "emulators":
 					for port in _config[key]["ports"].keys():
 						_config[key]["ports"][port] = env.get_value(_EMULATORS_PORTS, port, "")
-				if key == "auth_providers":
+				elif key == "auth_providers":
 					for provider in _config[key].keys():
 						_config[key][provider] = env.get_value(_AUTH_PROVIDERS, provider, "")
+				elif key == "workarounds":
+					pass
 				else:
 					var value : String = env.get_value(_ENVIRONMENT_VARIABLES, key, "")
 					if value == "":
-						_print("The value for `%s` is not configured. If you are not planning to use it, ignore this message." % key)
+						if OS.is_debug_build():
+							_print("The value for `%s` is not configured. If you are not planning to use it, ignore this message." % key)
 					else:
 						_config[key] = value
 		else:

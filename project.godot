@@ -229,7 +229,7 @@ window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local_server/plugin.cfg" )
+enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local-server/plugin.cfg" )
 
 [gui]
 
@@ -247,6 +247,10 @@ Jump={
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true
+
+[network]
+
+limits/tcp/connect_timeout_seconds=10
 
 [physics]
 

@@ -181,7 +181,7 @@ func _ready():
 	add_command("help", self, "cmd_help", 0)
 	add_command("clear", self, "cmd_clear", 0)
 	add_command("cls", self, "cmd_clear", 0)
-	add_command("stats", self, "cmd_stats", 0)
+	add_command("status", self, "cmd_status", 0)
 	add_command("volume", self, "cmd_volume", 2)
 	add_command_autocomplete_list("volume", ["music", "sfx"])
 	add_command("mute", self, "cmd_mute", 0)
@@ -190,6 +190,8 @@ func _ready():
 	add_command("credits", self, "cmd_credits", 0)
 	add_command("performance", self, "cmd_performance", 0)
 	add_command("perf", self, "cmd_performance", 0)
+	add_command("link", self, "cmd_link", 0)
+	add_command("logout", self, "cmd_logout", 0)
 	
 	# Cheats (Classic Mode only in production builds)
 	add_command("invincible", self, "cmd_invincible", 0)
@@ -210,12 +212,14 @@ func _ready():
 		add_command("timescale", self, "cmd_timescale", 1)
 		add_command("clear_stats", self, "cmd_clear_stats", 1)
 		add_command("reset_guest", self, "cmd_reset_guest", 0)
+		add_command("delete_guest", self, "cmd_delete_guest", 1)
 		add_command("profile", self, "cmd_profile", 0)
 		
 		add_command_autocomplete_list("timescale", ["0.25", "0.5", "1.0", "2.0", "3.0"])
 		add_command_autocomplete_list("set_level", ["1", "5", "10", "15", "20"])
 		add_command_autocomplete_list("set_lvl", ["1", "5", "10", "15", "20"])
 		add_command_autocomplete_list("clear_stats", ["confirm"])
+		add_command_autocomplete_list("delete_guest", ["confirm"])
 
 
 func handle_mobile_tap(pos: Vector2):
@@ -546,11 +550,13 @@ func cmd_help():
 	print_line("  [b]performance[/b] / [b]perf[/b] - Toggle performance monitor overlay.")
 	print_line("  [b]controls[/b] - List keyboard/screen controls.")
 	print_line("  [b]credits[/b] - Show credits.")
+	print_line("  [b]status[/b] - Shows network, system, and sync status report.")
+	print_line("  [b]link[/b] - Open player profile / login panel.")
+	print_line("  [b]logout[/b] - Log out from profile and switch to a guest session.")
 	print_line("  [b]quit[/b] / [b]exit[/b] - Close the game.\n")
 	
 	print_line("[color=#a2f5a2][b]GAMEPLAY[/b][/color]")
-	print_line("  [b]gamemode [classic|escalation][/b] - Set active game mode.")
-	print_line("  [b]stats[/b] - View run & lifetime stats.\n")
+	print_line("  [b]gamemode [classic|escalation][/b] - Set active game mode.\n")
 	
 	print_line("[color=#ffddaa][b]AUDIO[/b][/color]")
 	print_line("  [b]volume [music|sfx] [0-100][/b] - Set volume of music or SFX.")
@@ -572,32 +578,8 @@ func cmd_help():
 		print_line("  [b]restart[/b] - Restart game session.")
 		print_line("  [b]clear_stats [confirm][/b] - Reset all high scores and stats.")
 		print_line("  [b]reset_guest[/b] - Wipes local stats and creates a new anonymous Firebase profile.")
-		print_line("  [b]profile[/b] - Prints player name, Firebase UID, and auth status.\n")
-
-
-func cmd_stats():
-	var main_node = get_tree().root.get_node_or_null("Main")
-	if is_instance_valid(main_node):
-		print_line("--- PLAYER STATISTICS ---")
-		print_line("Total Games Played: " + str(main_node.stats.get("total_games", 0)))
-		print_line("Classic High Score: " + str(main_node.hiscores.get(0, 0)))
-		print_line("Escalation High Score: " + str(main_node.hiscores.get(1, 0)))
-		print_line("Highest Level Reached: " + str(main_node.highest_levels.get(1, 1)))
-		print_line("Total Deaths: " + str(main_node.stats.get("total_deaths", 0)))
-		print_line("Total Revives: " + str(main_node.stats.get("total_revives", 0)))
-		print_line("Distance Traveled: %.1f m" % main_node.stats.get("total_distance", 0.0))
-		print_line("Total Playtime: %.1f min" % (main_node.stats.get("playtime", 0.0) / 60.0))
-		
-		var sync_status = "[color=#ffff66]Pending[/color]"
-		if main_node.last_sync_attempted:
-			if main_node.last_sync_success:
-				var t = OS.get_datetime_from_unix_time(main_node.last_sync_timestamp)
-				sync_status = "[color=#88ff88]Synced (%02d:%02d:%02d)[/color]" % [t.hour, t.minute, t.second]
-			else:
-				sync_status = "[color=#ff8888]Failed[/color]"
-		print_line("Cloud Sync: " + sync_status)
-	else:
-		print_line("Error: Main node not found.")
+		print_line("  [b]delete_guest [confirm][/b] - Wipes local stats, deletes user from all Firestore collections, and deletes Auth user account.")
+		print_line("  [b]profile[/b] - Prints player stats, name, Firebase UID, and auth status.\n")
 
 
 func cmd_volume(target_str: String = "", val_str: String = ""):
@@ -810,17 +792,28 @@ func cmd_clear_stats(confirm_str: String = ""):
 	var dir = Directory.new()
 	if dir.file_exists("user://save_game.dat"):
 		dir.remove("user://save_game.dat")
+	if dir.file_exists("user://save_game.dat.bak"):
+		dir.remove("user://save_game.dat.bak")
+	if dir.file_exists("user://player_data_rushybird.dat"):
+		dir.remove("user://player_data_rushybird.dat")
 	
 	var main_node = get_tree().root.get_node_or_null("Main")
 	if is_instance_valid(main_node):
-		main_node.hiscores = {0: 0, 1: 0}
-		main_node.highest_levels = {0: 1, 1: 1}
+		main_node.player_data = {
+			"player_name": Global.player_name,
+			"classic_highscore": 0,
+			"escalation_highscore": 0,
+			"escalation_highest_level": 1,
+			"total_games": 0,
+			"playtime": 0.0,
+			"total_deaths": 0,
+			"total_revives": 0,
+			"total_distance": 0.0,
+			"is_registered": false,
+			"last_updated": 0,
+			"has_changed_name_logged_in": false
+		}
 		main_node.score = 0
-		for key in main_node.stats.keys():
-			if typeof(main_node.stats[key]) == TYPE_INT:
-				main_node.stats[key] = 0
-			elif typeof(main_node.stats[key]) == TYPE_REAL:
-				main_node.stats[key] = 0.0
 		main_node.update_score_display()
 		if main_node.has_method("update_health_display"):
 			main_node.update_health_display()
@@ -834,14 +827,21 @@ func cmd_reset_guest():
 		randomize()
 		Global.player_name = "Player" + str(randi() % 900000 + 100000)
 		Global.has_changed_name = false
-		main_node.hiscores = {0: 0, 1: 0}
-		main_node.highest_levels = {0: 1, 1: 1}
+		main_node.player_data = {
+			"player_name": Global.player_name,
+			"classic_highscore": 0,
+			"escalation_highscore": 0,
+			"escalation_highest_level": 1,
+			"total_games": 0,
+			"playtime": 0.0,
+			"total_deaths": 0,
+			"total_revives": 0,
+			"total_distance": 0.0,
+			"is_registered": false,
+			"last_updated": 0,
+			"has_changed_name_logged_in": false
+		}
 		main_node.score = 0
-		for key in main_node.stats.keys():
-			if typeof(main_node.stats[key]) == TYPE_INT:
-				main_node.stats[key] = 0
-			elif typeof(main_node.stats[key]) == TYPE_REAL:
-				main_node.stats[key] = 0.0
 		main_node.update_score_display()
 		if main_node.has_method("update_health_display"):
 			main_node.update_health_display()
@@ -863,8 +863,94 @@ func cmd_reset_guest():
 		print_line("Error: Main node not found.")
 
 
+func cmd_delete_guest(confirm_str: String = ""):
+	confirm_str = confirm_str.to_lower().strip_edges()
+	if confirm_str != "confirm":
+		print_line("[color=#ff4444]WARNING: This will permanently delete your player data from Firestore, clear your leaderboard entries, and delete your Firebase account![/color]")
+		print_line("To proceed, type: [color=#ffff66]delete_guest confirm[/color]")
+		return
+
+	var uid = FirebaseManager.get_current_user_id()
+	if uid == "":
+		print_line("Error: No authenticated user session found.")
+		return
+		
+	print_line("[color=#ff8888]Initiating complete deletion of current user...[/color]")
+	
+	# 1. Delete associated Firestore documents
+	print_line("Deleting Firestore documents...")
+	
+	var alltime_col = Firebase.Firestore.collection("leaderboard_rushybird_alltime")
+	FirebaseManager._delete_doc(alltime_col, uid)
+	yield(FirebaseManager, "delete_completed")
+	print_line("Deleted from leaderboard_rushybird_alltime.")
+	
+	var seasonal_col = Firebase.Firestore.collection("leaderboard_rushybird_seasonal")
+	FirebaseManager._delete_doc(seasonal_col, uid)
+	yield(FirebaseManager, "delete_completed")
+	print_line("Deleted from leaderboard_rushybird_seasonal.")
+	
+	var stats_col = Firebase.Firestore.collection("player_data_rushybird")
+	FirebaseManager._delete_doc(stats_col, uid)
+	yield(FirebaseManager, "delete_completed")
+	print_line("Deleted from player_data_rushybird.")
+	
+	# 2. Delete the user account from Firebase Authentication
+	print_line("Deleting Auth account from Firebase Authentication...")
+	Firebase.Auth.delete_user_account()
+	var auth_result : Array = yield(Firebase.Auth, "auth_request")
+	if auth_result.size() > 0 and (auth_result[0] == 1 or str(auth_result[0]) == "1"):
+		print_line("Auth account deletion finished successfully.")
+	else:
+		var err_content = auth_result[1] if auth_result.size() > 1 else "Unknown"
+		print_line("Auth account deletion failed. Error: " + str(err_content))
+	
+	# 3. Reset local stats and save files (like in reset_guest)
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if is_instance_valid(main_node):
+		randomize()
+		Global.player_name = "Player" + str(randi() % 900000 + 100000)
+		Global.has_changed_name = false
+		main_node.player_data = {
+			"player_name": Global.player_name,
+			"classic_highscore": 0,
+			"escalation_highscore": 0,
+			"escalation_highest_level": 1,
+			"total_games": 0,
+			"playtime": 0.0,
+			"total_deaths": 0,
+			"total_revives": 0,
+			"total_distance": 0.0,
+			"is_registered": false,
+			"last_updated": 0,
+			"has_changed_name_logged_in": false
+		}
+		main_node.score = 0
+		main_node.update_score_display()
+		if main_node.has_method("update_health_display"):
+			main_node.update_health_display()
+			
+		main_node.save_hiscore()
+		
+	# 4. Reset Firebase Auth session and clear local credentials
+	if Firebase.Auth.has_method("remove_auth"):
+		Firebase.Auth.remove_auth()
+	Firebase.Auth.auth = {}
+	FirebaseManager.user_id = ""
+	FirebaseManager.is_logged_in = false
+	Firebase.Auth.login_anonymous()
+	
+	print_line("[color=#88ff88]Player name reset to: " + Global.player_name + "[/color]")
+	print_line("[color=#88ff88]Local stats cleared and anonymous session restarted successfully.[/color]")
+
+
 func cmd_profile():
-	print_line("--- CURRENT PROFILE ---")
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if not is_instance_valid(main_node):
+		print_line("Error: Main node not found.")
+		return
+		
+	print_line("--- CURRENT PROFILE & STATS ---")
 	
 	var p_name = Global.player_name
 	if p_name == "":
@@ -875,17 +961,73 @@ func cmd_profile():
 		name_status = " (Modified/Set)"
 	print_line("Player Name: " + p_name + name_status)
 	
+	var my_uid = FirebaseManager.get_current_user_id()
+	var all_time_rank_str = "N/A"
+	var seasonal_rank_str = "N/A"
+	if my_uid != "":
+		var idx = 0
+		for entry in FirebaseManager._temp_all_time:
+			if entry.get("uid", "") == my_uid:
+				all_time_rank_str = "#" + str(idx + 1)
+				break
+			idx += 1
+		
+		idx = 0
+		for entry in FirebaseManager._temp_seasonal:
+			if entry.get("uid", "") == my_uid:
+				seasonal_rank_str = "#" + str(idx + 1)
+				break
+			idx += 1
+			
+	print_line("All-Time Rank: " + all_time_rank_str)
+	print_line("Seasonal Rank: " + seasonal_rank_str)
+	
+	var player_data = main_node.player_data
+	print_line("Total Games Played: " + str(player_data.get("total_games", 0)))
+	print_line("High Score: " + str(main_node.get_highscore(main_node.mode_level)))
+	print_line("Highest Level: " + str(main_node.get_highest_level(main_node.mode_level)))
+	print_line("Total Deaths: " + str(player_data.get("total_deaths", 0)))
+	print_line("Total Revives: " + str(player_data.get("total_revives", 0)))
+	print_line("Distance Traveled: %.1f m" % player_data.get("total_distance", 0.0))
+	print_line("Playtime: %.1f min" % (player_data.get("playtime", 0.0) / 60.0))
+	
+	var email = ""
+	var is_guest = true
+	if FirebaseManager.is_logged_in and Firebase.Auth.auth:
+		email = Firebase.Auth.auth.get("email", "")
+		
+	var auth_status = ""
+	if email != "":
+		is_guest = false
+		
 	if FirebaseManager.is_logged_in:
-		var email = ""
-		if Firebase.Auth.auth:
-			email = Firebase.Auth.auth.get("email", "")
 		if email != "":
-			print_line("Authentication Status: [color=#88ff88]Authenticated (" + email + ")[/color]")
+			auth_status = "[color=#88ff88]Authenticated (" + email + ")[/color]"
 		else:
-			print_line("Authentication Status: [color=#88ff88]Authenticated (Guest)[/color]")
-		print_line("Firebase UID: " + FirebaseManager.user_id)
+			auth_status = "[color=#88ff88]Authenticated (Guest)[/color]"
 	else:
-		print_line("Authentication Status: [color=#ff8888]Not Authenticated / Connecting...[/color]")
+		auth_status = "[color=#ff8888]Not Authenticated / Connecting...[/color]"
+		
+	print_line("Firebase UID: " + (my_uid if my_uid != "" else "Connecting..."))
+	print_line("Authentication Status: " + auth_status)
+	
+	var last_synced_str = "Never"
+	if main_node.last_sync_timestamp > 0:
+		var local_offset = main_node.get_local_timezone_offset()
+		var t = OS.get_datetime_from_unix_time(main_node.last_sync_timestamp + local_offset)
+		var ampm = "AM"
+		var hr = t.hour
+		if hr >= 12:
+			ampm = "PM"
+			if hr > 12:
+				hr -= 12
+		elif hr == 0:
+			hr = 12
+		last_synced_str = "%02d-%02d-%04d %02d:%02d:%02d %s" % [t.day, t.month, t.year, hr, t.minute, t.second, ampm]
+		
+	print_line("Last Synced: " + last_synced_str)
+	if is_guest:
+		print_line("[color=#aaaaaa]Note: Guest user data will be reset if the browser data is cleared.[/color]")
 
 func add_input_history(text : String):
 	if (!console_history.size() || text != console_history.back()): # Don't add consecutive duplicates
@@ -1086,3 +1228,127 @@ func cmd_performance():
 		print_line("Performance monitor: " + ("ENABLED" if perf_monitor.visible else "DISABLED"))
 	else:
 		print_line("Error: Performance monitor overlay not initialized.")
+
+
+func cmd_link():
+	var is_linked = false
+	var email = ""
+	if FirebaseManager.is_logged_in and Firebase.Auth.auth:
+		email = Firebase.Auth.auth.get("email", "")
+		if email != "":
+			is_linked = true
+			
+	if is_linked:
+		print_line("Account already linked/logged in: " + email)
+		return
+
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if is_instance_valid(main_node):
+		if main_node.active_panel_name != "profile":
+			main_node._on_ProfileButton_pressed()
+		main_node._on_ClaimProfile_pressed()
+		toggle_console()
+		print_line("Opening profile linking panel.")
+	else:
+		print_line("Error: Main node not found.")
+
+
+func cmd_logout():
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if is_instance_valid(main_node):
+		main_node._on_Logout_pressed()
+		print_line("Logged out successfully. User logged in anonymously.")
+	else:
+		Firebase.Auth.logout()
+		FirebaseManager.is_logged_in = false
+		FirebaseManager.user_id = ""
+		var dir = Directory.new()
+		if dir.file_exists("user://user.auth"):
+			dir.remove("user://user.auth")
+		Firebase.Auth.login_anonymous()
+		print_line("Logged out from Firebase Manager.")
+
+
+func cmd_status():
+	print_line("[b]=== GAME & NETWORK STATUS REPORT ===[/b]\n")
+	
+	# 1. Technical & System Info
+	print_line("[color=#88ccff][b]SYSTEM INFO[/b][/color]")
+	print_line("  OS Platform: " + OS.get_name())
+	var build_type = "Debug (Editor/Debug Run)" if OS.is_debug_build() else "Release"
+	print_line("  Build Type: " + build_type)
+	print_line("  Window Size: %dx%d" % [OS.window_size.x, OS.window_size.y])
+	print_line("  FPS: %d" % Engine.get_frames_per_second())
+	print_line("  Static Memory Usage: %.2f MB" % (OS.get_static_memory_usage() / 1024.0 / 1024.0))
+	print_line("")
+
+	# 2. Account & Authentication Status
+	print_line("[color=#e088ff][b]ACCOUNT & AUTHENTICATION[/b][/color]")
+	var auth_status = "Connected" if FirebaseManager.is_logged_in else "Disconnected"
+	var auth_color = "#88ff88" if FirebaseManager.is_logged_in else "#ff8888"
+	print_line("  Firebase Client: [color=%s]%s[/color]" % [auth_color, auth_status])
+	
+	var uid = FirebaseManager.get_current_user_id()
+	if uid == "":
+		print_line("  Firebase UID: [color=#ff8888]Not Authenticated[/color]")
+	else:
+		print_line("  Firebase UID: " + uid)
+		
+	var is_guest = true
+	var email = ""
+	if FirebaseManager.is_logged_in and Firebase.Auth.auth:
+		email = Firebase.Auth.auth.get("email", "")
+		if email != "":
+			is_guest = false
+			
+	var account_type = "Guest Account (Anonymous)" if is_guest else "Linked Account (" + email + ")"
+	print_line("  Account Type: " + account_type)
+	
+	if FirebaseManager.last_refresh_time > 0:
+		var refresh_age = OS.get_unix_time() - FirebaseManager.last_refresh_time
+		print_line("  Token Age: %d seconds (Last refreshed: %d)" % [refresh_age, FirebaseManager.last_refresh_time])
+	else:
+		print_line("  Token Age: Never Refreshed")
+	print_line("")
+
+	# 3. Connection & Configuration
+	print_line("[color=#ffddaa][b]CONNECTION & CONFIG[/b][/color]")
+	var config_status = "[color=#88ff88]Loaded[/color]" if FirebaseManager.is_config_available else "[color=#ff8888]Missing (.env not found)[/color]"
+	print_line("  Firebase Config: " + config_status)
+	var network_mode = "HTML5 Javascript Bridge (Web)" if OS.has_feature("JavaScript") else "Native Godot REST Client"
+	print_line("  Connection Interface: " + network_mode)
+	print_line("")
+
+	# 4. Game State Info
+	print_line("[color=#a2f5a2][b]GAME STATE[/b][/color]")
+	var main_node = get_tree().root.get_node_or_null("Main")
+	if is_instance_valid(main_node):
+		var mode_name = main_node.get_mode_string()
+		print_line("  Active Game Mode: " + mode_name)
+		print_line("  Is Running: " + ("Yes" if main_node.game_playing else "No"))
+		print_line("  Current Run Score: " + str(main_node.score))
+		if main_node.mode_level == 1:
+			print_line("  Current Level: " + str(main_node.current_speed_level))
+		print_line("  Speed Multiplier: %.2fx" % main_node.game_speed)
+		var cheats_color = "#ff8888" if main_node.cheats_used else "#88ff88"
+		var cheats_status = "YES (Leaderboard ineligible)" if main_node.cheats_used else "NO"
+		print_line("  Cheats Active: [color=%s]%s[/color]" % [cheats_color, cheats_status])
+	else:
+		print_line("  Error: Main game node not active.")
+	print_line("")
+
+	# 5. Cloud Sync Status
+	print_line("[color=#ffff66][b]CLOUD SYNC[/b][/color]")
+	if is_instance_valid(main_node):
+		var sync_status = "Pending"
+		if main_node.last_sync_attempted:
+			if main_node.last_sync_success:
+				var local_offset = main_node.get_local_timezone_offset()
+				var t = OS.get_datetime_from_unix_time(main_node.last_sync_timestamp + local_offset)
+				sync_status = "Synced at %02d:%02d:%02d" % [t.hour, t.minute, t.second]
+			else:
+				sync_status = "Sync Failed"
+		print_line("  Score Sync Status: " + sync_status)
+	else:
+		print_line("  Score Sync Status: N/A")
+	print_line("")

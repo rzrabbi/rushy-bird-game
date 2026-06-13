@@ -1,153 +1,142 @@
 <h1 align="center">Rushy Bird</h1>
 
 <p align="center">
-  <a href="https://itch.io/embed-upload/17690534?color=4c92ca" target="_blank">
+  <a href="#" target="_blank">
     <img src="https://img.shields.io/badge/PLAY_NOW_ON-ITCH.IO-fa5c5c?style=for-the-badge&logo=itch.io&logoColor=white" alt="Play Game on itch.io" height="50" />
   </a>
 </p>
 
 <p align="center">
-  This is my very first game development project! I've always wanted to explore game dev, and I chose Godot as my first engine to learn the ropes. Rushy Bird is my first attempt at building something playable, learning how game programming works, and getting comfortable with Godot. It's a fast-paced, 2D arcade game featuring dynamic speed escalation, persistent high scores, and mobile-friendly touch controls. Developing a smooth game feel and a scaling speed mechanic was a fun challenge for my first project.
+  This is my very first game development project! I've always wanted to explore game development, and I chose Godot as my first engine to learn the ropes. Rushy Bird is my first attempt at building something playable, learning how game programming works, and getting comfortable with Godot. It's a fast-paced, 2D arcade game featuring dynamic speed escalation, persistent high scores, and mobile-friendly touch controls. Developing a smooth game feel and a scaling speed mechanic was a fun challenge for my first project.
 </p>
 
 <h2 align="center">Gameplay Preview</h2>
 
 <p align="center">
-  <a href="https://itch.io/embed-upload/17690534?color=4c92ca">
-    <img src="assets/previews/v0.1_gameplay.gif" alt="Gameplay Preview" />
-  </a>
+  <img src="assets/previews/v1.0-beta_gameplay.gif" alt="Gameplay Preview" />
 </p>
 
-# How to play
+# Input Controls
 
-The game is controlled using the **Spacebar** on a keyboard. If you are playing on a touchscreen device, you can simply **tap the screen** to jump and navigate the bird through the pipes.
+- **Keyboard (Desktop):** The **Spacebar** initiates jumps and menu navigation.
+- **Touchscreen (Mobile):** Tapping the screen initiates jumps and menu navigation.
 
 # Game Modes
 
-Rushy Bird features two distinct game modes, each tracking its own independent high score to challenge players in different ways:
+Rushy Bird contains two game modes with independent high-score tracking.
 
-### Classic Mode
+## Classic Mode
 
-- **The Experience:** Classic rules, pure skill.
-- **Speed:** A constant, static **1.0x** speed.
-- **Focus:** Perfect for developing rhythmic tapping memory and focusing on clean, consistent execution without the stress of acceleration.
+- **Speed:** Static `1.0x` base speed.
+- **Mechanics:** Constant velocity and spawning intervals with standard obstacle avoidance.
 
-### Escalation Mode
+## Escalation Mode
 
-- **The Experience:** An adrenaline-fueled, infinite progression challenge where the game speeds up over time.
-- **Asymptotic Speed Scaling:** The game speed smoothly accelerates over time according to an asymptotic curve, tapering off safely as it approaches a hard cap of **2.5x** speed. The acceleration rate is deliberately gentle, giving players time to adjust to each speed increment.
-- **Infinite Levels:**
-  - The level duration starts at **30 seconds** and increases by **5 seconds** per level up (capped at **45 seconds** per level) to prevent late-game fatigue.
-  - Every level-up triggers a visual speed alert, a level-up sound effect, and a **health refill** (+1 heart).
-- **Adaptive Obstacle Spawning:**
-  - **Dynamic Intervals:** Pipes squeeze closer together as the level increases, reducing the spawning interval from a leisurely 2.0s down to a tight **1.6s**.
-  - **Partially Decoupled Timing:** The spawn timer is partially linked to game speed — pipes arrive slightly faster at higher speeds, but at half the acceleration rate, keeping the experience smooth instead of overwhelming.
-  - **Progressive Randomness:** Random Y-offset variance is limited in early levels to make them easier to learn, unlocking the full vertical deviation of **8.5** by Level 5.
-  - **Jump Restraint:** To keep extremely fast levels fair, the maximum vertical height difference between consecutive pipes is dynamically restrained based on the current game speed.
+- **Speed Scaling:** Asymptotic speed acceleration capped at a maximum of `2.5x` base speed.
+- **Level Progression:**
+  - Level duration starts at 30 seconds, incrementing by 5 seconds per level up to a maximum duration of 45 seconds.
+  - Each level-up triggers a speed increase, a visual/audio alert, and a health refill (+1 heart).
+- **Obstacle Spawning:**
+  - Spawning interval scales down from `2.0s` to a minimum cap of `1.6s` as level increases.
+  - Spawning interval acceleration rate is set to half of the game speed acceleration rate.
+  - Y-axis obstacle offset randomness scales up to a maximum deviation of `8.5` by Level 5.
+  - Maximum vertical distance difference between consecutive pipes is dynamically constrained based on current speed.
 - **Health & Revive System:**
-  - You start with **3 hearts** (maximum capacity of 3).
-  - Colliding with a pipe consumes 1 heart, clears existing pipes, and triggers a brief **blink/invincibility phase** to let you recover.
-  - Colliding with the ground or flying too high results in instant death, bypassing the revive system.
-- **Gravity Soft Cap:** Bird gravity scales quadratically with speed to preserve jump arcs, but is soft-capped at 2.0x speed for better playability at extreme velocities.
-- **Dynamic Score Multiplier:** Points earned per pipe scale directly with the current difficulty level (`current_level + 1`), heavily rewarding players who manage to survive deep into the run.
+  - Runs initiate with 3 hearts (maximum capacity).
+  - Pipe collisions deduct 1 heart, clear existing obstacles, and trigger a temporary invincibility (blink) state.
+  - Ground or top boundary collisions result in instant death.
+- **Physics Calibration:** Gravity scales quadratically with speed, capped at `2.0x` speed.
+- **Score Multiplier:** Point values scale linearly as `current_level + 1`.
 
-# Running from Source
+# Developer Console & Instrumentation
 
-If you want to modify or edit the source code, you can easily set it up locally. (If you just want to play the game, you can play it directly in your browser on [itch.io](https://rzrabbi.itch.io/rushy-bird)).
+The game features an integrated **Developer Console** that pauses gameplay when opened and resumes when closed, facilitating settings adjustment, performance monitoring, and debugging.
 
-### Prerequisites
+## Console Interface & Controls
 
-You will need **Godot Engine 3.x** (version 3.6 recommended). You can download it for free from [the official Godot website](https://godotengine.org/download/archive/3.6-stable/).
+- **Desktop Activation:** Toggled using the **Tilde/Backtick key (`~` or `` ` ``)** during gameplay.
+- **Mobile Activation (Touchscreens):** Toggled by tapping the **top-left corner of the screen 5 times** in quick succession.
+- **Deactivation:** Dismissed using the **Escape (ESC)** key or by clicking/tapping outside the console input region.
+- **Shortcuts & Navigation:**
+  - **`Tab`**: Triggers autocomplete suggestions.
+  - **`Up / Down Arrows`**: Cycles through entered command history.
 
-### Steps to Run Locally
+## Key Console Commands
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/rzrabbi/rushy-bird.git
-   ```
-2. **Import the project**:
-   - Open **Godot Engine**.
-   - Click the **Import** button on the right side.
-   - Click **Browse** and navigate to your cloned `rushy-bird` folder.
-   - Select the `project.godot` file, click **Open**, and then click **Import & Edit**.
-3. **Run the game**:
-   - Once inside the editor, click the **Play** button in the top-right corner (or press `F5`) to start playing!
+A full list of console commands can be queried using the `help` command. Primary commands include:
 
-### Developer Console & Commands
+- **`help`**: Displays a quick reference guide of all available console commands.
+- **`performance` / `perf`**: Toggles a real-time telemetry overlay at the top of the screen showing FPS, active game settings, and system diagnostics.
+- **`status`**: Displays system statistics, active game state, network/authentication status, and cloud sync reports.
+- **`gamemode [classic|escalation]`**: Queries or sets the active game mode.
+- **`link`**: Opens the profile claiming/linking panel to associate the guest session with a permanent account.
+- **`logout`**: Logs out of the current authenticated user session and returns to an anonymous guest profile.
+- **`delete_guest [confirm]`**: Wipes local stats, deletes user data from all Firestore collections, and deletes the associated Firebase Auth account (requires typing `delete_guest confirm` to run).
 
-The game features a **Developer Console** that pauses gameplay when opened and resumes when closed. This console allows you to monitor performance, tweak settings, and trigger cheats on the fly.
+_Note: Additional commands are available for audio controls (`volume`, `mute`), gameplay statistics (`stats`), debug utility commands (`levelup`, `heal`, `kill`, `timescale`, `profile`, `reset_guest`), and gameplay cheats._
 
-### Performance Monitor Panel
+# Development Setup
 
-The console includes a built-in **Performance Monitor Panel** (toggled by running `performance` or `perf` in the console) that overlays real-time execution statistics at the top of the game screen:
-* **Release Mode**: Shows real-time FPS (including **1% Low FPS** to monitor lag/stuttering), current game mode, speed level, progression percentage, speed multiplier, current score, and player health.
-* **Debug/Editor Mode**: Shows all Release Mode stats plus memory diagnostics (current & peak static RAM, VRAM usage), engine rendering metrics (draw calls, vertex counts), active nodes count, orphan nodes count, and the game window resolution.
+The source codebase is open for local compilation, modification, and execution. A hosted web build will be available for direct play on [itch.io](#) (coming soon).
 
-#### Accessing the Console
-* **Desktop**: Press the **Tilde/Backtick key (`~` or `` ` ``)** during gameplay to toggle the console open or closed.
-* **Mobile (Touchscreens)**: Tap the **top-left corner of the screen 5 times** in quick succession.
-* **Closing the Console**: Press the **Escape (ESC)** key or tap/click outside the console input line.
+## Prerequisites
 
-#### Shortcuts & Navigation
-* **Tab**: Triggers autocomplete suggestions.
-* **Up / Down Arrows**: Cycles through your command history.
+- **Godot Engine 3.x** (Version 3.6 is recommended) is required. Downloads are available via [the official Godot website](https://godotengine.org/download/archive/3.6-stable/).
 
-> [!WARNING]
-> **Cheat Activation & Fair Play**
-> Using gameplay cheat commands (`invincible`, `speed`, or `addscore`) will flag the current game session as **cheated**. When active, the score text color will modulate to **coral red** and saving high scores to the local machine is **disabled**.
+## Workspace Configuration
 
----
+- **Repository Cloning:** Source coordinates: `https://github.com/rzrabbi/rushy-bird.git`
+- **Godot Project Import:** The project workspace is opened by importing the [project.godot](project.godot) settings file located at the root of the repository.
+- **Firebase Configuration:** Local builds utilize a settings file named `.env` at the directory `res://addons/godot-firebase/.env` for credentials. The template layout is defined in [example.env](addons/godot-firebase/example.env).
+- **Execution:** The default scene is run from the editor using the **Play** button or the `F5` hotkey.
 
-#### 1. System & General Commands
+# Leaderboards & Cloud Synchronization
 
-| Command | Arguments | Description |
-| :--- | :--- | :--- |
-| `help` | None | Displays a quick guide of available commands in the console. |
-| `clear` / `cls` | None | Clears the console text history. |
-| `performance` / `perf` | None | Toggles the overlay performance monitor at the top of the screen. |
-| `controls` | None | Displays a reference guide for game controls. |
-| `credits` | None | Displays the development credits. |
-| `quit` / `exit` | None | Instantly closes the game application. |
+Rushy Bird features real-time leaderboard tracking and persistent player profile synchronization powered by **Firebase Auth** and **Cloud Firestore**.
 
-#### 2. Gameplay Commands
+## Leaderboard Tracking
 
-| Command | Arguments | Description |
-| :--- | :--- | :--- |
-| `gamemode` | `[classic \| escalation \| 0 \| 1]` | Sets the active game mode. Classic is `0`, Escalation is `1`. If no argument is provided, queries the current mode. |
-| `stats` | None | Prints current run stats and lifetime statistics (total play time, total deaths, high scores, total distance, etc.). |
+- **Eligible Mode:** Only scores achieved in **Escalation Mode** are submitted to the global leaderboards.
+- **Dual Boards:** The game maintains two separate leaderboards:
+  - **All-Time Leaderboard:** Tracks the highest scores achieved in the game since inception.
+  - **Seasonal Leaderboard:** Resets automatically on the first day of each calendar month (tracked under monthly periods, e.g., `YYYY-MM`).
+- **Read Request Caching:** To minimize Firestore document read consumption, `FirebaseManager` implements an in-memory cache. Subsequent leaderboard requests are served directly from the cached datasets unless a force-refresh is requested (such as after score submission) or an active fetch operation is already in progress.
 
-#### 3. Audio Commands
+## Firebase Cloud Storage & Profiles
 
-| Command | Arguments | Description |
-| :--- | :--- | :--- |
-| `volume` | `[music \| sfx] [0-100]` | Directly sets the volume percentage of music or sound effects (e.g. `volume music 50`). If no arguments are provided, queries current volume. |
-| `mute` | None | Mutes all game audio (music and SFX). |
-| `unmute` | None | Unmutes the game, restoring all volume levels to 100%. |
+The game leverages Firebase Authentication and Cloud Firestore to store and synchronize player profiles and leaderboard entries:
 
-#### 4. Cheats (Classic Mode Only)
+- **Anonymous Sessions:** When running the game for the first time, an anonymous Firebase session is created in the background. Players receive a unique Firebase UID allowing their scores, distance, playtime, and statistics to sync immediately without requiring any signup.
+- **Profile Linking & Claiming:** Guest players can link/claim their profile using **Google Sign-In** or **Email/Password** credentials from the profile panel.
+  - **Conflict Resolution:** If a player links a guest session to a permanent account that already has cloud data, the game prompts them to resolve the conflict by either overwriting the cloud data with guest progress, discarding the guest progress to load cloud data, or cancelling.
+- **Firestore Collections Structure:**
+  - `leaderboard_rushybird_alltime`: Stores public high scores mapping player names and scores to Firebase UIDs.
+  - `leaderboard_rushybird_seasonal`: Identical to all-time, but stores monthly seasonal high scores segmented by the active time period.
+  - `player_data_rushybird`: Stores detailed user statistics including total games, lifetime deaths, revives, distance, playtime, and mode-specific high scores.
 
-| Command | Arguments | Description |
-| :--- | :--- | :--- |
-| `invincible` | None | Toggles God Mode (bird phases through pipes; hitting the ground still results in death). Flags the session as cheated. |
-| `speed` | `[multiplier]` | Sets the gameplay speed multiplier (e.g., `speed 1.5`). Querying without a multiplier is free; setting it flags the session as cheated. |
-| `addscore` | `[amount]` | Adds points to your score (default is 10). Flags the session as cheated. |
+## Firestore Security & Anti-Cheat Rules
 
-#### 5. Debug-Only Commands (Restricted to Debug Builds & Editor Runs)
+To prevent cheating and protect leaderboard integrity, the database uses strict validation rules defined in [firestore.rules](firestore.rules):
 
-| Command | Arguments | Description |
-| :--- | :--- | :--- |
-| `levelup` / `lvlup` | None | Skips to the next speed level in Escalation mode, accelerating speed and refilling 1 heart. |
-| `set_level` / `set_lvl` | `[number]` | Skips directly to a specific difficulty level in Escalation mode (e.g. `set_level 10`). |
-| `heal` | None | Restores bird health to full (3 hearts). |
-| `kill` | None | Instantly kills the bird, bypassing remaining hearts/revives. |
-| `timescale` | `[scale]` | Sets the engine speed scale (e.g. `timescale 0.5` for slow-motion, `timescale 2.0` for fast-forward). |
-| `restart` | None | Instantly reloads the current scene. |
-| `clear_stats` | `confirm` | Permanently deletes all saved scores, statistics, and settings from the local machine (requires the `confirm` parameter). |
-| `reset_guest` | None | Wipes out guest details locally (Guest ID, player name, stats, and scores) and generates a new Guest ID, acting as a clean slate. |
-| `profile` | None | Prints current guest profile details (Guest ID, Player Name, and Firebase authentication status) to the console. |
+- **Anti-Cheat Validation:** Score submissions are checked by the `isRealisticScore()` rule, enforcing that scores must be integers between 0 and 9,999 to reject impossible or hacked scores.
+- **Level Validation:** Leaderboard submissions and player profile stats validate the level using the `isRealisticLevel()` rule, enforcing that the level must be an integer between 1 and 1,000 to reject impossible or hacked level stats.
+- **Strict User Ownership:** Write operations (create, update, delete) are permitted only if the user is authenticated and writing to their own document (`request.auth.uid == userId`), preventing players from tampering with others' data.
+- **Upward-Only Score Progress:** Leaderboard updates are only allowed if the new score is greater than or equal to the current high score (`request.resource.data.score >= resource.data.score`), preventing score resets.
+- **Data Integrity Constraints:** Direct type and constraint validations are enforced, including character length limits (maximum 20 characters for player names) and specific data types for all properties.
+
+## Firebase Guest Cleanup & Maintenance (GitHub Actions)
+
+- **Firebase Auth Auto-Cleanup:** Automatically deletes anonymous/guest auth accounts older than 30 days via Firebase native settings.
+- **Manual Firebase Guest Purge ([manual-firebase-guest-purge.yml](.github/workflows/manual-firebase-guest-purge.yml)):** Manual workflow (`workflow_dispatch`) to delete all anonymous guest accounts from Firebase Auth as well as their corresponding Firestore database documents, regardless of age.
+- **Scheduled Firestore Database Pruning ([scheduled-firestore-pruning.yml](.github/workflows/scheduled-firestore-pruning.yml)):** Scheduled workflow running monthly (also manual-triggerable) to clean up Firestore documents (leaderboards/stats) of users whose accounts no longer exist in Firebase Authentication (due to guest account expiration or deletion).
+
+## Local Configuration
+
+- **Game Config:** Firebase authentication and project settings are read from `.env` located at `res://addons/godot-firebase/.env`. If this file is missing, execution falls back to offline mode with local save data. An [example.env](addons/godot-firebase/example.env) is included as a reference.
+- **Export Packaging:** The `.env` configuration file is automatically packaged into the exported PCK archive during builds using the built-in non-resource export filters (`include_filter="*.env"`) defined in `export_presets.cfg`. This ensures Firebase configurations are securely bundled with the game binary for production exports without needing custom packaging scripts.
 
 # Special Thanks
 
-A massive thank you to **Johnny Rouddro** for introducing me to the Godot Engine and game development in general. His guidance in setting up the project and helping write the code was invaluable to this first step of my journey.
+A massive thank you to **Johnny Rouddro** for introducing me to the Godot Engine and game development in general. His guidance in setting up the project and helping write initial and early prototype code was invaluable to this first step of my journey.
 
 Many thanks as well to **Borna Barua** for creating the fantastic art and assets for this game.

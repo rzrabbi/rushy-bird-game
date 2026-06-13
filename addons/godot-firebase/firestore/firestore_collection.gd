@@ -52,7 +52,7 @@ func get_doc(document_id : String, from_cache : bool = false, is_listener : bool
 				result = child
 				break
 	else:
-		print("get_document returned null for %s %s" % [collection_name, document_id])
+		print("[Firebase] Document '%s' in collection '%s' not found (normal for new guest/first-time profiles)." % [document_id, collection_name])
 
 	return result
 

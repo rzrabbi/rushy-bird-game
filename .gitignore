@@ -1,13 +1,19 @@
+.vscode/
+
+devlogs/
+
 .import/
 export_presets.cfg
-.vscode/
 scripts/tools/
-devlog/
-secret_config.cfg
+addons/godot-firebase/.env
 
-# Admin Dashboard
+.firebase/
 dashboard/
 
-# Graphify
 graphify-out/
 .graphifyignore
+
+*.bak
+*.log
+.DS_Store
+*.json

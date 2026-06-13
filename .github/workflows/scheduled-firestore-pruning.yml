@@ -1,0 +1,57 @@
+name: Scheduled Firestore Database Pruning
+on:
+  schedule:
+    # Run at 00:00 on day 1 of every month (once every month)
+    - cron: '0 0 1 * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI at any time
+
+jobs:
+  database-pruning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Firebase Admin SDK
+        run: npm install firebase-admin
+
+      - name: Run Database Pruning Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node .github/workflows/scripts/prune_firestore.js
+
+      - name: Publish Pruning Report
+        if: always()
+        run: |
+          if [ -f step_summary.md ]; then
+            cat step_summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Pruning failed or summary report not generated." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            REPO_NAME="${{ github.repository }}"
+            REPO_URL="https://github.com/${{ github.repository }}"
+            RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            
+            if [ -f step_summary.md ]; then
+              # Escape quotes and convert newlines for JSON payload
+              SUMMARY_TEXT=$(cat step_summary.md | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+              PAYLOAD="{\"embeds\": [{\"title\": \"🧹 Firestore Database Pruning Completed\", \"description\": \"$SUMMARY_TEXT\\n\\n🔗 **Repository**: [$REPO_NAME]($REPO_URL)\\n📅 **Run Details**: [View Workflow Run]($RUN_URL)\", \"color\": 5814783}]}"
+            else
+              PAYLOAD="{\"embeds\": [{\"title\": \"❌ Firestore Database Pruning Failed\", \"description\": \"The database pruning job failed or did not generate a report.\\n\\n🔗 **Repository**: [$REPO_NAME]($REPO_URL)\\n📅 **Run Details**: [View Workflow Run]($RUN_URL)\", \"color\": 15548997}]}"
+            fi
+            curl -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"
+          else
+            echo "DISCORD_WEBHOOK_URL is not set. Skipping Discord notification."
+          fi

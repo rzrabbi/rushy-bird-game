@@ -54,6 +54,7 @@ var has_child : bool = false
 var tcp_server : TCP_Server = TCP_Server.new()
 var tcp_timer : Timer = Timer.new()
 var tcp_timeout : float = 0.5
+var tcp_start_time : int = 0
 
 var _headers : PoolStringArray = [
 	"Content-Type: application/json",
@@ -145,7 +146,7 @@ var _local_uri : String = "http://localhost:%s/"%_local_port
 var _local_provider : AuthProvider = AuthProvider.new()
 
 func _ready() -> void:
-	use_threads = true
+	self.timeout = 15
 	tcp_timer.wait_time = tcp_timeout
 	tcp_timer.connect("timeout", self, "_tcp_stream_timer")
 
@@ -274,6 +275,8 @@ func get_auth_localhost(provider: AuthProvider = get_GoogleProvider(), port : in
 		has_child = true
 		tcp_timer.start()
 		tcp_server.listen(port, "*")
+		tcp_start_time = OS.get_unix_time()
+		print("[Firebase Auth] Started local redirect TCP listener on port ", port, ".")
 
 
 func get_auth_with_redirect(provider: AuthProvider) -> void:
@@ -359,8 +362,20 @@ func get_google_auth_manual(provider: AuthProvider = _local_provider) -> void:
 
 # A timer used to listen through TCP on the redirect uri of the request
 func _tcp_stream_timer() -> void:
+	if OS.get_unix_time() - tcp_start_time > 120:
+		tcp_timer.stop()
+		if has_child:
+			remove_child(tcp_timer)
+			has_child = false
+		tcp_server.stop()
+		print("[Firebase Auth Error] Local TCP listener timed out after 120 seconds.")
+		emit_signal("login_failed", "timeout", "Authentication timed out.")
+		emit_signal("auth_request", "timeout", "Authentication timed out.")
+		return
+
 	var peer : StreamPeer = tcp_server.take_connection()
 	if peer != null:
+		print("[Firebase Auth] Local TCP listener accepted redirect connection.")
 		var raw_result : String = peer.get_utf8_string(400)
 		if raw_result != "" and raw_result.begins_with("GET"):
 			tcp_timer.stop()
@@ -373,9 +388,13 @@ func _tcp_stream_timer() -> void:
 					token = splitted[1]
 					break
 			if token == "":
-				emit_signal("login_failed")
+				print("[Firebase Auth Error] Failed to find authentication token in redirect request.")
+				emit_signal("login_failed", "cancelled", "No authentication token found")
+				emit_signal("auth_request", "cancelled", "No authentication token found")
 				peer.disconnect_from_host()
 				tcp_server.stop()
+				return
+			print("[Firebase Auth] Google OAuth authorization code successfully intercepted.")
 			var data : PoolByteArray = '<p style="text-align:center">&#128293; You can close this window now. &#128293;</p>'.to_ascii()
 			peer.put_data(("HTTP/1.1 200 OK\n").to_ascii())
 			peer.put_data(("Server: Godot Firebase SDK\n").to_ascii())
@@ -383,6 +402,7 @@ func _tcp_stream_timer() -> void:
 			peer.put_data("Connection: close\n".to_ascii())
 			peer.put_data(("Content-Type: text/html; charset=UTF-8\n\n").to_ascii())
 			peer.put_data(data)
+			print("[Firebase Auth] Initiating login with Google OAuth token/code...")
 			login_with_oauth(token, _local_provider)
 			yield(self, "login_succeeded")
 			peer.disconnect_from_host()
@@ -441,6 +461,7 @@ func _on_FirebaseAuth_request_completed(result : int, response_code : int, heade
 				auth[key] = clean_res[key]
 			match requesting:
 				Requests.EXCHANGE_TOKEN:
+					print("[Firebase Auth] Google OAuth token exchange completed successfully.")
 					emit_signal("token_exchanged", true)
 			begin_refresh_countdown()
 			# Refresh token countdown
@@ -449,10 +470,12 @@ func _on_FirebaseAuth_request_completed(result : int, response_code : int, heade
 			match res.kind:
 				RESPONSE_SIGNUP, "identitytoolkit#SetAccountInfoResponse":
 					auth = get_clean_keys(res)
+					print("[Firebase Auth] Account registration successful.")
 					emit_signal("signup_succeeded", auth)
 					begin_refresh_countdown()
 				RESPONSE_SIGNIN, RESPONSE_ASSERTION, RESPONSE_CUSTOM_TOKEN:
 					auth = get_clean_keys(res)
+					print("[Firebase Auth] Login successful (UID: ", auth.localid, ").")
 					emit_signal("login_succeeded", auth)
 					begin_refresh_countdown()
 				RESPONSE_USERDATA:
@@ -462,11 +485,13 @@ func _on_FirebaseAuth_request_completed(result : int, response_code : int, heade
 	else:
 		# error message would be INVALID_EMAIL, EMAIL_NOT_FOUND, INVALID_PASSWORD, USER_DISABLED or WEAK_PASSWORD
 		if requesting == Requests.EXCHANGE_TOKEN:
+			print("[Firebase Auth Error] Google OAuth token exchange failed: ", res.error, " - ", res.get("error_description", ""))
 			emit_signal("token_exchanged", false)
 			emit_signal("login_failed", res.error, res.error_description)
 			emit_signal("auth_request", res.error, res.error_description)
 		else:
 			var sig = "signup_failed" if auth_request_type == Auth_Type.SIGNUP_EP else "login_failed"
+			print("[Firebase Auth Error] Request failed: (", res.error.code, ") ", res.error.message)
 			emit_signal(sig, res.error.code, res.error.message)
 			emit_signal("auth_request", res.error.code, res.error.message)
 	requesting = Requests.NONE

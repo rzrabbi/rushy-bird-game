@@ -6,7 +6,6 @@ var has_played_fall_sound = false
 var initial_y = 0.0
 var initial_x = 0.0
 var hover_time = 0.0
-var stuck_timer = 0.0
 var is_on_floor = false
 var in_score_area = false
 var is_invincible = false
@@ -100,7 +99,7 @@ func _on_Bird_body_entered(body):
 			return # Ignore extra pipe hits in the same frame if already dead
 			
 		# Health/revive system handles taking damage and giving a chance to continue
-		if $"..".has_method("request_revive") and $"..".request_revive():
+		if $"..".has_method("revive_me_jett") and $"..".revive_me_jett():
 			if has_node("../BirdCollision"):
 				$"../BirdCollision".play()
 			
@@ -140,7 +139,6 @@ func destroy_body():
 	collision_layer = 0
 	collision_mask = 0
 	mode = RigidBody.MODE_STATIC
-	stuck_timer = -999.0 # Prevent running again
 
 func vanish_silently():
 	if has_node("rushy_bird"):
@@ -148,7 +146,6 @@ func vanish_silently():
 	collision_layer = 0
 	collision_mask = 0
 	mode = RigidBody.MODE_STATIC
-	stuck_timer = -999.0 # Prevent running again
 
 func die(play_sound = true):
 	if is_dead:

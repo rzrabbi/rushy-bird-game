@@ -1,18 +1,60 @@
 extends Spatial
 
 var score = 0
-var hiscores = {0: 0, 1: 0}
-var highest_levels = {0: 1, 1: 1}
 var game_speed = 1.0
 
-var stats = {
+var player_data = {
+	"player_name": "",
+	"classic_highscore": 0,
+	"escalation_highscore": 0,
+	"escalation_highest_level": 1,
 	"total_games": 0,
-	"high_score": 0,
 	"playtime": 0.0,
 	"total_deaths": 0,
 	"total_revives": 0,
-	"total_distance": 0.0
+	"total_distance": 0.0,
+	"is_registered": false,
+	"last_updated": 0,
+	"has_changed_name_logged_in": false
 }
+
+func get_highscore(mode: int) -> int:
+	if mode == 0:
+		return int(player_data.get("classic_highscore", 0))
+	elif mode == 1:
+		return int(player_data.get("escalation_highscore", 0))
+	return 0
+
+func set_highscore(mode: int, val: int):
+	if mode == 0:
+		player_data["classic_highscore"] = val
+	elif mode == 1:
+		player_data["escalation_highscore"] = val
+
+func get_highest_level(mode: int) -> int:
+	if mode == 1:
+		return int(player_data.get("escalation_highest_level", 1))
+	return 1
+
+func set_highest_level(mode: int, val: int):
+	if mode == 1:
+		player_data["escalation_highest_level"] = val
+
+func get_local_timezone_offset() -> int:
+	var local_unix = OS.get_unix_time_from_datetime(OS.get_datetime(false))
+	var utc_unix = OS.get_unix_time()
+	var diff = local_unix - utc_unix
+	return int(round(float(diff) / 900.0)) * 900
+
+func get_local_datetime_string(timestamp: int) -> String:
+	var local_offset = get_local_timezone_offset()
+	var local_time = OS.get_datetime_from_unix_time(timestamp + local_offset)
+	return "%02d-%02d-%04d %02d:%02d:%02d" % [local_time.day, local_time.month, local_time.year, local_time.hour, local_time.minute, local_time.second]
+
+func get_local_datetime_short_string(timestamp: int) -> String:
+	var local_offset = get_local_timezone_offset()
+	var local_time = OS.get_datetime_from_unix_time(timestamp + local_offset)
+	return "%02d-%02d-%04d %02d:%02d" % [local_time.day, local_time.month, local_time.year, local_time.hour, local_time.minute]
 var game_playing = false
 var is_game_over_active: bool = false
 var mode_level = 0 # 0: Classic, 1: Escalation
@@ -44,7 +86,6 @@ var start_label: Label
 var settings_button: TextureButton
 var profile_button: TextureButton
 var bottom_bar: Panel
-var game_over_level_label: Label
 var game_over_bottom_bar: Panel
 var game_over_leaderboard_button: TextureButton
 var game_over_profile_button: TextureButton
@@ -71,6 +112,9 @@ var bird_pop: AudioStreamPlayer
 var level_change_sound: AudioStreamPlayer
 var revive_sound: AudioStreamPlayer
 var health_refill_sound: AudioStreamPlayer
+
+var loading_overlay: Panel
+var loading_spinner_icon: Control
 
 func create_audio(node_name: String, path: String) -> AudioStreamPlayer:
 	var player = AudioStreamPlayer.new()
@@ -163,10 +207,11 @@ func _ready():
 	FirebaseManager.connect("profile_claim_conflict", self, "_on_profile_claim_conflict")
 	
 	_create_claim_profile_panel()
+	_create_loading_overlay()
 	_create_manage_account_panel()
 	_create_conflict_panel()
 	_create_overwrite_confirm_panel()
-	var music_slider = CustomSlider.new(music_volume)
+	var music_slider = CustomSlider.new(music_volume, 700.0)
 	music_slider.name = "MusicSlider"
 	music_slider.anchor_right = 1.0
 	music_slider.anchor_bottom = 1.0
@@ -215,7 +260,6 @@ func _ready():
 	bottom_bar = $UI/Control/BottomBar
 	version_label = null # moved to SettingsPanel
 	
-	game_over_level_label = $UI/Control.get_node_or_null("GameOverLevelLabel")
 	game_over_bottom_bar = $UI/Control.get_node_or_null("GameOverBottomBar")
 	game_over_leaderboard_button = $UI/Control.get_node_or_null("GameOverLeaderboardButton")
 	game_over_profile_button = $UI/Control.get_node_or_null("GameOverProfileButton")
@@ -244,31 +288,44 @@ func _ready():
 	profile_panel_node.anchor_top = 0.5
 	profile_panel_node.anchor_right = 0.5
 	profile_panel_node.anchor_bottom = 0.5
-	profile_panel_node.margin_left = -320
-	profile_panel_node.margin_top = -540
-	profile_panel_node.margin_right = 320
-	profile_panel_node.margin_bottom = 540
+	profile_panel_node.margin_left = -525
+	profile_panel_node.margin_top = -840
+	profile_panel_node.margin_right = 525
+	profile_panel_node.margin_bottom = 520
 	$UI/Control.add_child(profile_panel_node)
 	
 	var profile_title = Label.new()
 	profile_title.text = "Player Profile"
 	profile_title.anchor_right = 1.0
-	profile_title.margin_top = 40
-	profile_title.margin_bottom = 100
+	profile_title.margin_top = 30
+	profile_title.margin_bottom = 90
 	profile_title.align = Label.ALIGN_CENTER
 	profile_title.valign = Label.VALIGN_CENTER
-	var title_font = load("res://resources/Theme.tres").get_font("font", "Button")
+	var title_font = $UI/Control/LeaderboardPanel/Title.get_font("font")
 	if title_font: profile_title.add_font_override("font", title_font)
 	profile_panel_node.add_child(profile_title)
+	
+	var profile_divider = Panel.new()
+	profile_divider.name = "Divider"
+	profile_divider.anchor_left = 0.1
+	profile_divider.anchor_right = 0.9
+	profile_divider.margin_top = 110
+	profile_divider.margin_bottom = 113
+	var ref_div = $UI/Control/LeaderboardPanel/Divider
+	if ref_div:
+		var div_style = ref_div.get_stylebox("panel")
+		if div_style:
+			profile_divider.add_stylebox_override("panel", div_style)
+	profile_panel_node.add_child(profile_divider)
 	
 	var profile_vbox = VBoxContainer.new()
 	profile_vbox.name = "VBox"
 	profile_vbox.anchor_right = 1.0
 	profile_vbox.anchor_bottom = 1.0
-	profile_vbox.margin_left = 40
-	profile_vbox.margin_right = -40
-	profile_vbox.margin_top = 120
-	profile_vbox.margin_bottom = -370
+	profile_vbox.margin_left = 50
+	profile_vbox.margin_right = -50
+	profile_vbox.margin_top = 140
+	profile_vbox.margin_bottom = -470
 	profile_vbox.add_constant_override("separation", 15)
 	profile_panel_node.add_child(profile_vbox)
 	
@@ -279,16 +336,20 @@ func _ready():
 	close_profile.anchor_right = 0.5
 	close_profile.anchor_bottom = 1.0
 	close_profile.margin_left = -140
-	close_profile.margin_top = -220
+	close_profile.margin_top = -120
 	close_profile.margin_right = 140
-	close_profile.margin_bottom = -130
+	close_profile.margin_bottom = -30
 	close_profile.connect("pressed", self, "_on_CloseProfile_pressed")
 	
 	var ref_btn = $UI/Control/SettingsPanel/CloseSettings
 	if ref_btn:
-		var ref_font = ref_btn.get_font("font")
-		if ref_font:
-			close_profile.add_font_override("font", ref_font)
+		var close_font = $UI/Control/LeaderboardPanel/CloseLeaderboard.get_font("font")
+		if close_font:
+			close_profile.add_font_override("font", close_font)
+		else:
+			var ref_font = ref_btn.get_font("font")
+			if ref_font:
+				close_profile.add_font_override("font", ref_font)
 		
 		var style_hover = ref_btn.get_stylebox("hover")
 		if style_hover:
@@ -313,12 +374,12 @@ func _ready():
 	profile_disclaimer.anchor_bottom = 1.0
 	profile_disclaimer.margin_left = 20
 	profile_disclaimer.margin_right = -20
-	profile_disclaimer.margin_top = -120
-	profile_disclaimer.margin_bottom = -20
+	profile_disclaimer.margin_top = -450
+	profile_disclaimer.margin_bottom = -260
 	
 	var desc_font = DynamicFont.new()
 	desc_font.font_data = load("res://assets/fonts/LilitaOne-Regular.ttf")
-	desc_font.size = 24
+	desc_font.size = 30
 	desc_font.outline_size = 2
 	desc_font.outline_color = Color(0.1, 0.1, 0.1, 0.8)
 	profile_disclaimer.add_font_override("normal_font", desc_font)
@@ -331,17 +392,20 @@ func _ready():
 	btn_claim_profile.anchor_top = 1.0
 	btn_claim_profile.anchor_right = 0.5
 	btn_claim_profile.anchor_bottom = 1.0
-	btn_claim_profile.margin_left = -220
-	btn_claim_profile.margin_top = -340
-	btn_claim_profile.margin_right = 220
-	btn_claim_profile.margin_bottom = -250
+	btn_claim_profile.margin_left = -400
+	btn_claim_profile.margin_top = -240
+	btn_claim_profile.margin_right = 400
+	btn_claim_profile.margin_bottom = -140
 	btn_claim_profile.connect("pressed", self, "_on_ClaimProfile_pressed")
 	
 	if ref_btn:
-		var ref_font = ref_btn.get_font("font")
+		var close_font = $UI/Control/LeaderboardPanel/CloseLeaderboard.get_font("font")
+		var ref_font = close_font if close_font else ref_btn.get_font("font")
 		if ref_font:
 			var green_font = ref_font.duplicate()
-			green_font.outline_color = Color(0.2, 0.5, 0.1) # Green outline matching Start button
+			green_font.outline_color = Color(0.2, 0.5, 0.1)
+			if green_font is DynamicFont:
+				green_font.size = 45
 			btn_claim_profile.add_font_override("font", green_font)
 			
 	var green_normal = StyleBoxFlat.new()
@@ -356,6 +420,8 @@ func _ready():
 	green_normal.shadow_color = Color(0, 0, 0, 0.2)
 	green_normal.shadow_size = 4
 	green_normal.shadow_offset = Vector2(0, 2)
+	green_normal.content_margin_left = 30
+	green_normal.content_margin_right = 30
 	
 	var green_hover = StyleBoxFlat.new()
 	green_hover.bg_color = Color(0.45, 0.85, 0.25)
@@ -369,6 +435,8 @@ func _ready():
 	green_hover.shadow_color = Color(0, 0, 0, 0.25)
 	green_hover.shadow_size = 6
 	green_hover.shadow_offset = Vector2(0, 3)
+	green_hover.content_margin_left = 30
+	green_hover.content_margin_right = 30
 
 	var green_pressed = StyleBoxFlat.new()
 	green_pressed.bg_color = Color(0.35, 0.7, 0.15)
@@ -383,6 +451,8 @@ func _ready():
 	green_pressed.shadow_color = Color(0, 0, 0, 0.15)
 	green_pressed.shadow_size = 2
 	green_pressed.shadow_offset = Vector2(0, 1)
+	green_pressed.content_margin_left = 30
+	green_pressed.content_margin_right = 30
 
 	btn_claim_profile.add_stylebox_override("normal", green_normal)
 	btn_claim_profile.add_stylebox_override("hover", green_hover)
@@ -399,17 +469,20 @@ func _ready():
 	btn_manage_account.anchor_top = 1.0
 	btn_manage_account.anchor_right = 0.5
 	btn_manage_account.anchor_bottom = 1.0
-	btn_manage_account.margin_left = -220
-	btn_manage_account.margin_top = -340
-	btn_manage_account.margin_right = 220
-	btn_manage_account.margin_bottom = -250
+	btn_manage_account.margin_left = -400
+	btn_manage_account.margin_top = -240
+	btn_manage_account.margin_right = 400
+	btn_manage_account.margin_bottom = -140
 	btn_manage_account.connect("pressed", self, "_on_ManageAccount_pressed")
 	
 	if ref_btn:
-		var ref_font = ref_btn.get_font("font")
+		var close_font = $UI/Control/LeaderboardPanel/CloseLeaderboard.get_font("font")
+		var ref_font = close_font if close_font else ref_btn.get_font("font")
 		if ref_font:
 			var green_font = ref_font.duplicate()
 			green_font.outline_color = Color(0.2, 0.5, 0.1) # Green outline matching Start button
+			if green_font is DynamicFont:
+				green_font.size = 45
 			btn_manage_account.add_font_override("font", green_font)
 			
 	btn_manage_account.add_stylebox_override("normal", green_normal)
@@ -421,7 +494,6 @@ func _ready():
 			
 	profile_panel_node.add_child(btn_manage_account)
 
-	# Dynamic creation of InspectorPanel
 	inspector_panel_node = Panel.new()
 	inspector_panel_node.name = "InspectorPanel"
 	inspector_panel_node.visible = false
@@ -429,10 +501,10 @@ func _ready():
 	inspector_panel_node.anchor_top = 0.5
 	inspector_panel_node.anchor_right = 0.5
 	inspector_panel_node.anchor_bottom = 0.5
-	inspector_panel_node.margin_left = -320
-	inspector_panel_node.margin_top = -480
-	inspector_panel_node.margin_right = 320
-	inspector_panel_node.margin_bottom = 480
+	inspector_panel_node.margin_left = -525
+	inspector_panel_node.margin_top = -840
+	inspector_panel_node.margin_right = 525
+	inspector_panel_node.margin_bottom = 520
 	
 	if has_node("UI/Control/SettingsPanel/ConfirmPanel"):
 		var warning_style = $UI/Control/SettingsPanel/ConfirmPanel.get_stylebox("panel")
@@ -443,24 +515,38 @@ func _ready():
 	var inspector_title = Label.new()
 	inspector_title.name = "Title"
 	inspector_title.text = "Player Profile"
+	inspector_title.anchor_left = 0.0
 	inspector_title.anchor_right = 1.0
-	inspector_title.margin_top = 40
+	inspector_title.margin_left = 40
+	inspector_title.margin_top = 30
+	inspector_title.margin_right = -40
 	inspector_title.margin_bottom = 100
 	inspector_title.align = Label.ALIGN_CENTER
 	inspector_title.valign = Label.VALIGN_CENTER
+	inspector_title.autowrap = true
 	if title_font:
 		inspector_title.add_font_override("font", title_font)
 	inspector_panel_node.add_child(inspector_title)
+	
+	var inspector_divider = Panel.new()
+	inspector_divider.anchor_left = 0.1
+	inspector_divider.anchor_right = 0.9
+	inspector_divider.margin_top = 118
+	inspector_divider.margin_bottom = 121
+	var insp_div_style = StyleBoxFlat.new()
+	insp_div_style.bg_color = Color(0.25, 0.3, 0.45, 0.7)
+	inspector_divider.add_stylebox_override("panel", insp_div_style)
+	inspector_panel_node.add_child(inspector_divider)
 	
 	inspector_vbox = VBoxContainer.new()
 	inspector_vbox.name = "VBox"
 	inspector_vbox.anchor_right = 1.0
 	inspector_vbox.anchor_bottom = 1.0
-	inspector_vbox.margin_left = 40
-	inspector_vbox.margin_right = -40
-	inspector_vbox.margin_top = 150
-	inspector_vbox.margin_bottom = -200
-	inspector_vbox.add_constant_override("separation", 20)
+	inspector_vbox.margin_left = 50
+	inspector_vbox.margin_right = -50
+	inspector_vbox.margin_top = 145
+	inspector_vbox.margin_bottom = -470
+	inspector_vbox.add_constant_override("separation", 15)
 	inspector_panel_node.add_child(inspector_vbox)
 	
 	var close_inspector = Button.new()
@@ -470,9 +556,9 @@ func _ready():
 	close_inspector.anchor_right = 0.5
 	close_inspector.anchor_bottom = 1.0
 	close_inspector.margin_left = -140
-	close_inspector.margin_top = -180
+	close_inspector.margin_top = -120
 	close_inspector.margin_right = 140
-	close_inspector.margin_bottom = -95
+	close_inspector.margin_bottom = -30
 	close_inspector.connect("pressed", self, "_on_CloseInspector_pressed")
 	
 	if ref_btn:
@@ -495,8 +581,8 @@ func _ready():
 	inspector_disclaimer.anchor_bottom = 1.0
 	inspector_disclaimer.margin_left = 20
 	inspector_disclaimer.margin_right = -20
-	inspector_disclaimer.margin_top = -105
-	inspector_disclaimer.margin_bottom = -10
+	inspector_disclaimer.margin_top = -450
+	inspector_disclaimer.margin_bottom = -260
 	if desc_font:
 		inspector_disclaimer.add_font_override("normal_font", desc_font)
 	inspector_disclaimer.add_color_override("default_color", Color(0.7, 0.7, 0.7, 0.8))
@@ -514,29 +600,51 @@ func _ready():
 	err_panel.anchor_top = 0.5
 	err_panel.anchor_right = 0.5
 	err_panel.anchor_bottom = 0.5
-	err_panel.margin_left = -250
-	err_panel.margin_top = -180
-	err_panel.margin_right = 250
-	err_panel.margin_bottom = 180
+	err_panel.margin_left = -400
+	err_panel.margin_top = -320
+	err_panel.margin_right = 400
+	err_panel.margin_bottom = 320
 	
-	if has_node("UI/Control/SettingsPanel/ConfirmPanel"):
-		var warning_style = $UI/Control/SettingsPanel/ConfirmPanel.get_stylebox("panel")
-		if warning_style:
-			err_panel.add_stylebox_override("panel", warning_style)
+	var err_panel_style = StyleBoxFlat.new()
+	err_panel_style.bg_color = Color(0.08, 0.1, 0.16, 0.97)
+	err_panel_style.corner_radius_top_left = 24
+	err_panel_style.corner_radius_top_right = 24
+	err_panel_style.corner_radius_bottom_right = 24
+	err_panel_style.corner_radius_bottom_left = 24
+	err_panel_style.border_width_left = 4
+	err_panel_style.border_width_top = 4
+	err_panel_style.border_width_right = 4
+	err_panel_style.border_width_bottom = 4
+	err_panel_style.border_color = Color(0.6, 0.2, 0.2, 0.8)
+	err_panel.add_stylebox_override("panel", err_panel_style)
 			
 	$UI/Control.add_child(err_panel)
 	
 	var err_title = Label.new()
 	err_title.text = "Storage Error"
 	err_title.anchor_right = 1.0
-	err_title.margin_top = 30
-	err_title.margin_bottom = 80
+	err_title.margin_top = 40
+	err_title.margin_bottom = 130
 	err_title.align = Label.ALIGN_CENTER
 	err_title.valign = Label.VALIGN_CENTER
-	err_title.add_color_override("font_color", Color(1.0, 0.3, 0.3)) # Warning Red
-	var err_title_font = load("res://resources/Theme.tres").get_font("font", "Button")
-	if err_title_font: err_title.add_font_override("font", err_title_font)
+	err_title.add_color_override("font_color", Color(1.0, 0.3, 0.3))
+	var err_title_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if err_title_font:
+		err_title_font.size = 65
+		err_title_font.outline_size = 4
+		err_title_font.outline_color = Color(0.3, 0.08, 0.08)
+		err_title.add_font_override("font", err_title_font)
 	err_panel.add_child(err_title)
+	
+	var err_divider = Panel.new()
+	err_divider.anchor_left = 0.1
+	err_divider.anchor_right = 0.9
+	err_divider.margin_top = 148
+	err_divider.margin_bottom = 151
+	var err_div_style = StyleBoxFlat.new()
+	err_div_style.bg_color = Color(0.5, 0.2, 0.2, 0.7)
+	err_divider.add_stylebox_override("panel", err_div_style)
+	err_panel.add_child(err_divider)
 
 	var err_msg = Label.new()
 	err_msg.name = "MessageLabel"
@@ -546,10 +654,14 @@ func _ready():
 	err_msg.valign = Label.VALIGN_CENTER
 	err_msg.anchor_left = 0.05
 	err_msg.anchor_right = 0.95
-	err_msg.margin_top = 90
-	err_msg.margin_bottom = 250
-	var msg_font = $UI/Control/MenuInfoLabel.get_font("font")
-	if msg_font: err_msg.add_font_override("font", msg_font)
+	err_msg.margin_top = 175
+	err_msg.margin_bottom = 450
+	var msg_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if msg_font:
+		msg_font.size = 50
+		msg_font.outline_size = 3
+		msg_font.outline_color = Color(0.08, 0.1, 0.15)
+		err_msg.add_font_override("font", msg_font)
 	err_panel.add_child(err_msg)
 	
 	var ok_btn = Button.new()
@@ -558,11 +670,29 @@ func _ready():
 	ok_btn.anchor_top = 1.0
 	ok_btn.anchor_right = 0.5
 	ok_btn.anchor_bottom = 1.0
-	ok_btn.margin_left = -70
-	ok_btn.margin_top = -90
-	ok_btn.margin_right = 70
-	ok_btn.margin_bottom = -25
+	ok_btn.margin_left = -200
+	ok_btn.margin_top = -130
+	ok_btn.margin_right = 200
+	ok_btn.margin_bottom = -30
 	ok_btn.connect("pressed", self, "_on_CloseStorageError_pressed")
+	var ok_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if ok_font:
+		ok_font.size = 45
+		ok_font.outline_size = 3
+		ok_font.outline_color = Color(0.08, 0.1, 0.15)
+		ok_btn.add_font_override("font", ok_font)
+	var ok_style = StyleBoxFlat.new()
+	ok_style.bg_color = Color(0.4, 0.8, 0.2)
+	ok_style.corner_radius_top_left = 20
+	ok_style.corner_radius_top_right = 20
+	ok_style.corner_radius_bottom_right = 20
+	ok_style.corner_radius_bottom_left = 20
+	ok_style.border_width_bottom = 8
+	ok_style.border_color = Color(0.3, 0.6, 0.15)
+	ok_style.content_margin_left = 30
+	ok_style.content_margin_right = 30
+	ok_btn.add_stylebox_override("normal", ok_style)
+	ok_btn.add_color_override("font_color", Color(1, 1, 1))
 	err_panel.add_child(ok_btn)
 
 	update_mode_button_text()
@@ -572,38 +702,47 @@ func _ready():
 		Global.auto_start = false
 		call_deferred("_on_Button_pressed", false)
 func _exit_tree():
-	save_hiscore()
+	if FirebaseManager.is_claiming_profile():
+		FirebaseManager.resolve_conflict_cancel()
+	save_hiscore(false)
 	
 func save_hiscore(sync_to_cloud: bool = true):
 	var file = File.new()
-	var err = file.open("user://save_game.dat", File.WRITE)
+	var err = file.open("user://player_data_rushybird.dat", File.WRITE)
 	if err != OK or not file.is_open():
 		if not storage_error_shown:
 			storage_error_shown = true
 			show_storage_error("Failed to save player stats and settings. Storage access might be restricted by your browser.")
 		return
+		
+	player_data["player_name"] = Global.player_name
+	player_data["last_updated"] = OS.get_unix_time()
+	
 	var data = {
-		"hiscores": hiscores,
-		"highest_levels": highest_levels,
+		"player_data": player_data,
 		"mode": mode_level,
 		"music_volume": music_volume,
 		"sfx_enabled": sfx_enabled,
-		"stats": stats,
-		"player_name": Global.player_name,
-		"has_changed_name": Global.has_changed_name
+		"has_changed_name": Global.has_changed_name,
+		"last_sync_timestamp": last_sync_timestamp
 	}
 	file.store_var(data)
 	file.close()
 	
 	if sync_to_cloud:
-		FirebaseManager.submit_stats(stats, hiscores, highest_levels, Global.player_name)
+		FirebaseManager.submit_stats(player_data)
 
 func load_hiscore():
+	if Global.player_name == "":
+		randomize()
+		Global.player_name = "Player" + str(randi() % 900000 + 100000)
+		player_data["player_name"] = Global.player_name
+
 	var file = File.new()
-	if not file.file_exists("user://save_game.dat"):
+	if not file.file_exists("user://player_data_rushybird.dat"):
 		return
 		
-	var err = file.open("user://save_game.dat", File.READ)
+	var err = file.open("user://player_data_rushybird.dat", File.READ)
 	
 	if err != OK or not file.is_open():
 		if file:
@@ -615,47 +754,28 @@ func load_hiscore():
 		
 	var content = file.get_var()
 	if typeof(content) == TYPE_DICTIONARY:
-		# Always start in Classic mode, so we don't load the saved mode_level
-		if content.has("hiscores"):
-			hiscores = content.get("hiscores")
-		else:
-			# Upgrade intermediate save format
-			hiscores[mode_level] = content.get("hiscore", 0)
-			
-		if content.has("highest_levels"):
-			var loaded_levels = content.get("highest_levels")
-			highest_levels[0] = int(max(1, loaded_levels.get(0, 1)))
-			highest_levels[1] = int(max(1, loaded_levels.get(1, 1)))
-			
+		if content.has("player_data"):
+			var loaded_data = content.get("player_data")
+			for key in player_data.keys():
+				if loaded_data.has(key):
+					player_data[key] = loaded_data[key]
+		
 		if content.has("music_volume"):
 			music_volume = content.get("music_volume")
 			
 		if content.has("sfx_enabled"):
 			sfx_enabled = content.get("sfx_enabled")
 			
-		if content.has("stats"):
-			var loaded_stats = content.get("stats")
-			for key in stats.keys():
-				if loaded_stats.has(key):
-					stats[key] = loaded_stats[key]
-		if content.has("player_name"):
-			Global.player_name = content.get("player_name")
 		if content.has("has_changed_name"):
 			Global.has_changed_name = content.get("has_changed_name")
-	else:
-		# Fallback to older integer format
-		file.seek(0)
-		var old_content = file.get_64()
-		if old_content != null:
-			hiscores[0] = old_content # Assume Classic
 			
-	stats["high_score"] = hiscores[mode_level]
-	file.close()
+		if content.has("last_sync_timestamp"):
+			last_sync_timestamp = content.get("last_sync_timestamp")
+			
+		if player_data.has("player_name"):
+			Global.player_name = player_data["player_name"]
 	
-	if Global.player_name == "":
-		randomize()
-		Global.player_name = "Player" + str(randi() % 900000 + 100000)
-	save_hiscore(false)
+	file.close()
 
 func _process(delta):
 	if game_playing:
@@ -688,9 +808,9 @@ func _process(delta):
 					if time_to_next_level < 45.0:
 						time_to_next_level += 5.0
 					
-					if current_speed_level > highest_levels[mode_level]:
-						highest_levels[mode_level] = current_speed_level
-						save_hiscore()
+					if current_speed_level > get_highest_level(mode_level):
+						set_highest_level(mode_level, current_speed_level)
+						save_hiscore(false)
 					
 					trigger_health_refill_animation()
 					
@@ -768,7 +888,7 @@ func play_health_consumed_animation(lost_index: int):
 		float_txt.text = "-1 HEALTH!"
 		var font = $UI/Control/MenuInfoLabel.get_font("font")
 		float_txt.add_font_override("font", font)
-		float_txt.add_color_override("font_color", Color(1.0, 0.2, 0.2)) # Strong red for damage
+		float_txt.add_color_override("font_color", Color(1.0, 0.2, 0.2))
 		
 		$UI.add_child(float_txt)
 		
@@ -797,7 +917,7 @@ func play_health_consumed_animation(lost_index: int):
 		txt_tween.start()
 		txt_tween.connect("tween_all_completed", float_txt, "queue_free")
 
-func request_revive() -> bool:
+func revive_me_jett() -> bool:
 	if mode_level == 0:
 		return false
 		
@@ -811,7 +931,7 @@ func request_revive() -> bool:
 		
 		progression_pause_timer = 2.5 / max(game_speed, 1.0) # Pause progression until pipes arrive
 		$ObstacleSpawner.clear_obstacles()
-		stats["total_revives"] = stats.get("total_revives", 0) + 1
+		player_data["total_revives"] = player_data.get("total_revives", 0) + 1
 		return true
 	elif current_health == 1:
 		current_health -= 1
@@ -827,16 +947,16 @@ func play_revive_sound():
 func update_score_display():
 	$UI/Control/Score.text = String(score)
 	if not cheats_used:
-		if score > hiscores[mode_level]:
+		if score > get_highscore(mode_level):
 			is_new_high_score = true
-		if score >= hiscores[mode_level]:
-			hiscores[mode_level] = score
-		stats["high_score"] = hiscores[mode_level]
+		if score >= get_highscore(mode_level):
+			set_highscore(mode_level, score)
+		
 	if menu_info_label:
 		if mode_level == 1:
-			menu_info_label.text = "YOUR BEST: " + String(hiscores[mode_level]) + " (Lvl " + str(highest_levels[mode_level]) + ")"
+			menu_info_label.text = "YOUR BEST: " + String(get_highscore(mode_level)) + " (Lvl " + str(get_highest_level(mode_level)) + ")"
 		else:
-			menu_info_label.text = "YOUR BEST: " + String(hiscores[mode_level])
+			menu_info_label.text = "YOUR BEST: " + String(get_highscore(mode_level))
 
 func _on_Button_pressed(play_sound: bool = true):
 	cheats_used = false
@@ -863,13 +983,13 @@ func _on_Button_pressed(play_sound: bool = true):
 	is_game_over_active = false
 	
 	if mode_level == 1:
-		stats["total_games"] = stats.get("total_games", 0) + 1
+		player_data["total_games"] = player_data.get("total_games", 0) + 1
 		
 	run_distance = 0.0
 	run_max_speed = 1.0
 	run_playtime = 0.0
 	
-	save_hiscore()
+	save_hiscore(false)
 
 	$UI/Control/PlayButton.hide()
 	if start_label: start_label.hide()
@@ -882,7 +1002,6 @@ func _on_Button_pressed(play_sound: bool = true):
 	if bottom_bar: bottom_bar.hide()
 	if is_instance_valid(logo_rect): logo_rect.hide()
 	
-	if is_instance_valid(game_over_level_label): game_over_level_label.hide()
 	if is_instance_valid(game_over_bottom_bar): game_over_bottom_bar.hide()
 	if is_instance_valid(game_over_leaderboard_button): game_over_leaderboard_button.hide()
 	if is_instance_valid(game_over_profile_button): game_over_profile_button.hide()
@@ -943,7 +1062,6 @@ func _hide_active_screen():
 		if game_over_panel: game_over_panel.hide()
 		$UI/Control/RestartButton.hide()
 		$UI/Control/MainMenuButton.hide()
-		if is_instance_valid(game_over_level_label): game_over_level_label.hide()
 		# Keep bottom bar and its nav buttons visible when a panel opens on game over screen
 		if is_instance_valid(logo_rect): logo_rect.hide()
 	else:
@@ -966,6 +1084,8 @@ func _close_active_panel_only():
 		if p: p.hide()
 	elif active_panel_name == "settings":
 		if settings_panel: settings_panel.hide()
+	if inspector_panel_node:
+		inspector_panel_node.hide()
 	active_panel_name = ""
 
 func _show_active_screen():
@@ -978,8 +1098,6 @@ func _show_active_screen():
 		if is_instance_valid(game_over_profile_button): game_over_profile_button.show()
 		if is_instance_valid(game_over_settings_button): game_over_settings_button.show()
 		if is_instance_valid(logo_rect): logo_rect.show()
-		if is_instance_valid(game_over_level_label) and mode_level == 1:
-			game_over_level_label.show()
 		if version_label: version_label.show()
 	else:
 		$UI/Control/PlayButton.show()
@@ -999,6 +1117,10 @@ func _on_LeaderboardButton_pressed():
 	
 	# Toggle: tapping the same button again closes the panel and restores home screen
 	if active_panel_name == "leaderboard":
+		if inspector_panel_node and inspector_panel_node.visible:
+			inspector_panel_node.hide()
+			leaderboard_panel.show()
+			return
 		active_panel_name = ""
 		leaderboard_panel.hide()
 		_show_active_screen()
@@ -1023,14 +1145,16 @@ func _show_loading_leaderboards():
 	for child in seasonal_vbox.get_children():
 		child.queue_free()
 		
-	var loading = Label.new()
-	loading.text = "Loading..."
-	loading.align = Label.ALIGN_CENTER
-	var base_font = $UI/Control/MenuInfoLabel.get_font("font")
-	if base_font: loading.add_font_override("font", base_font)
+	var all_time_loading = _create_vbox_spinner("Loading...")
+	var seasonal_loading = _create_vbox_spinner("Loading...")
 	
-	all_time_vbox.add_child(loading)
-	seasonal_vbox.add_child(loading.duplicate())
+	all_time_vbox.add_child(all_time_loading)
+	seasonal_vbox.add_child(seasonal_loading)
+	
+	var all_time_spinner = all_time_loading.find_node("SpinnerIcon", true, false)
+	var seasonal_spinner = seasonal_loading.find_node("SpinnerIcon", true, false)
+	_start_spinner_animation(all_time_spinner)
+	_start_spinner_animation(seasonal_spinner)
 
 func _on_leaderboard_updated(all_time, seasonal):
 	for child in all_time_vbox.get_children():
@@ -1040,6 +1164,7 @@ func _on_leaderboard_updated(all_time, seasonal):
 		
 	_populate_leaderboard(all_time_vbox, all_time)
 	_populate_leaderboard(seasonal_vbox, seasonal)
+	_update_profile_panel()
 
 func _populate_leaderboard(vbox, data):
 	var base_font = $UI/Control/MenuInfoLabel.get_font("font")
@@ -1078,14 +1203,18 @@ func _populate_leaderboard(vbox, data):
 	for entry in data:
 		var row = HBoxContainer.new()
 		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_constant_override("separation", 0)
 		
 		var rank_lbl = Label.new()
 		rank_lbl.text = "#" + str(rank)
-		rank_lbl.rect_min_size = Vector2(80, 0)
+		rank_lbl.rect_min_size = Vector2(120, 0)
+		rank_lbl.align = Label.ALIGN_CENTER
 		if base_font: rank_lbl.add_font_override("font", base_font)
 		
 		var name_container = HBoxContainer.new()
-		name_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_container.rect_min_size = Vector2(560, 0)
+		name_container.alignment = BoxContainer.ALIGN_CENTER
 		
 		var name_btn = LinkButton.new()
 		var p_name = entry.get("player_name", "Unknown")
@@ -1096,20 +1225,13 @@ func _populate_leaderboard(vbox, data):
 		if base_font: name_btn.add_font_override("font", base_font)
 		
 		var uid = entry.get("uid", "")
+		var is_current_user = (uid != "" and uid == FirebaseManager.get_current_user_id())
 		if uid != "":
 			name_btn.connect("pressed", self, "_on_leaderboard_player_clicked", [uid, entry.get("player_name", "Unknown")])
 		
 		name_container.add_child(name_btn)
 		
-		var is_registered = entry.get("is_registered", false)
-		var is_current_user = (uid != "" and uid == FirebaseManager.get_current_user_id())
-		var is_current_user_registered = false
-		if is_current_user and FirebaseManager.is_logged_in and Firebase.Auth.auth:
-			var email = Firebase.Auth.auth.get("email", "")
-			if email != "":
-				is_current_user_registered = true
-				
-		if is_registered or is_current_user_registered:
+		if bool(entry.get("is_registered", false)):
 			var check_spacer = Control.new()
 			check_spacer.rect_min_size = Vector2(8, 0)
 			name_container.add_child(check_spacer)
@@ -1118,22 +1240,70 @@ func _populate_leaderboard(vbox, data):
 			check_icon.icon_type = "solid"
 			check_icon.icon_name = "check"
 			if base_font:
-				check_icon.icon_size = base_font.size
+				check_icon.icon_size = int(base_font.size * 0.65)
 			else:
-				check_icon.icon_size = 28
-			check_icon.add_color_override("font_color", Color(0.2, 0.9, 0.2)) # Bright green
+				check_icon.icon_size = 18
+			check_icon.valign = Label.VALIGN_CENTER
+			check_icon.add_color_override("font_color", Color(0.22, 0.79, 0.45)) # Modern emerald green
 			name_container.add_child(check_icon)
 		
 		var score_lbl = Label.new()
 		score_lbl.text = str(entry.get("score", 0))
-		score_lbl.align = Label.ALIGN_RIGHT
-		score_lbl.rect_min_size = Vector2(100, 0)
+		score_lbl.align = Label.ALIGN_CENTER
+		score_lbl.rect_min_size = Vector2(160, 0)
 		if base_font: score_lbl.add_font_override("font", base_font)
+		
+		var lvl_lbl = Label.new()
+		var level_val = entry.get("level")
+		if level_val != null:
+			lvl_lbl.text = str(level_val)
+		else:
+			lvl_lbl.text = "-"
+		lvl_lbl.align = Label.ALIGN_CENTER
+		lvl_lbl.rect_min_size = Vector2(120, 0)
+		if base_font: lvl_lbl.add_font_override("font", base_font)
+		
+		var left_spacer = Control.new()
+		left_spacer.rect_min_size = Vector2(20, 0)
+		row.add_child(left_spacer)
 		
 		row.add_child(rank_lbl)
 		row.add_child(name_container)
 		row.add_child(score_lbl)
-		vbox.add_child(row)
+		row.add_child(lvl_lbl)
+		
+		var row_margin = MarginContainer.new()
+		row_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row_margin.add_constant_override("margin_left", 0)
+		row_margin.add_constant_override("margin_right", 0)
+		
+		if is_current_user:
+			# Highlight self
+			var highlight = PanelContainer.new()
+			highlight.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var highlight_style = StyleBoxFlat.new()
+			highlight_style.bg_color = Color(0.4, 0.8, 0.2, 0.15) # Translucent green
+			highlight_style.corner_radius_top_left = 6
+			highlight_style.corner_radius_top_right = 6
+			highlight_style.corner_radius_bottom_left = 6
+			highlight_style.corner_radius_bottom_right = 6
+			highlight_style.content_margin_top = 4
+			highlight_style.content_margin_bottom = 4
+			highlight_style.content_margin_left = 0
+			highlight_style.content_margin_right = 0
+			highlight.add_stylebox_override("panel", highlight_style)
+			highlight.add_child(row)
+			row_margin.add_child(highlight)
+		else:
+			row_margin.add_child(row)
+			
+		vbox.add_child(row_margin)
+			
+		# Gap between entries
+		var item_spacer = Control.new()
+		item_spacer.rect_min_size = Vector2(0, 12)
+		vbox.add_child(item_spacer)
+		
 		rank += 1
 
 func _on_CloseLeaderboard_pressed():
@@ -1145,34 +1315,19 @@ func _on_CloseLeaderboard_pressed():
 
 func _on_SettingsButton_down():
 	settings_button.rect_scale = Vector2(0.85, 0.85)
-	settings_button.self_modulate = Color(0.7, 0.7, 0.7) # Dim slightly when pressed
+	settings_button.self_modulate = Color(0.7, 0.7, 0.7)
 
 func _on_SettingsButton_up():
 	settings_button.rect_scale = Vector2(1.0, 1.0)
-	settings_button.self_modulate = Color(1.0, 1.0, 1.0) # Back to original color
+	settings_button.self_modulate = Color(1.0, 1.0, 1.0)
 
-func _on_ProfileButton_pressed():
-	if is_instance_valid(ui_button_click):
-		ui_button_click.play()
-	
-	# Toggle: tapping the same button again closes the panel and restores home screen
-	if active_panel_name == "profile":
-		active_panel_name = ""
-		var p = $UI/Control.get_node_or_null("ProfilePanel")
-		if p: p.hide()
-		_show_active_screen()
-		return
-	
-	var was_panel_open = active_panel_name != ""
-	
+func _update_profile_panel():
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if not profile_panel_node: return
 	
 	var vbox = profile_panel_node.get_node("VBox")
 	for child in vbox.get_children():
 		child.queue_free()
-	
-	stats["high_score"] = hiscores[mode_level]
 	
 	var p_name = Global.player_name
 	if p_name == "":
@@ -1203,19 +1358,19 @@ func _on_ProfileButton_pressed():
 		["Player Name", p_name],
 		["All-Time Rank", all_time_rank_str],
 		["Seasonal Rank", seasonal_rank_str],
-		["Total Games Played", str(stats["total_games"])],
-		["High Score", str(stats["high_score"])],
-		["Highest Level", str(highest_levels[1])],
-		["Total Deaths", str(stats["total_deaths"])],
-		["Total Revives", str(stats.get("total_revives", 0))],
-		["Distance Traveled", "%.0f m" % stats.get("total_distance", 0.0)],
-		["Playtime", "%.1f min" % (stats["playtime"] / 60.0)]
+		["Total Games Played", str(player_data["total_games"])],
+		["High Score", str(get_highscore(mode_level))],
+		["Highest Level", str(get_highest_level(mode_level))],
+		["Total Deaths", str(player_data["total_deaths"])],
+		["Total Revives", str(player_data.get("total_revives", 0))],
+		["Distance Traveled", "%.0f m" % player_data.get("total_distance", 0.0)],
+		["Playtime", "%.1f min" % (player_data["playtime"] / 60.0)]
 	]
 	
 	var base_font = $UI/Control/MenuInfoLabel.get_font("font")
 	var font = base_font.duplicate() if base_font else null
 	if font:
-		font.size = 42 # slightly smaller to fit perfectly without crowding
+		font.size = 50 # matches leaderboard content size
 		
 	for stat_pair in stats_labels:
 		var row = HBoxContainer.new()
@@ -1235,7 +1390,7 @@ func _on_ProfileButton_pressed():
 		if stat_pair[0] == "Player Name":
 			var name_font = base_font.duplicate() if base_font else null
 			if name_font:
-				name_font.size = 32
+				name_font.size = 50
 				label2.add_font_override("font", name_font)
 		else:
 			if font: label2.add_font_override("font", font)
@@ -1262,8 +1417,17 @@ func _on_ProfileButton_pressed():
 		
 	var last_synced_str = "Never"
 	if last_sync_timestamp > 0:
-		var t = OS.get_datetime_from_unix_time(last_sync_timestamp)
-		last_synced_str = "%02d-%02d-%04d %02d:%02d:%02d" % [t.day, t.month, t.year, t.hour, t.minute, t.second]
+		var local_offset = get_local_timezone_offset()
+		var t = OS.get_datetime_from_unix_time(last_sync_timestamp + local_offset)
+		var ampm = "AM"
+		var hr = t.hour
+		if hr >= 12:
+			ampm = "PM"
+			if hr > 12:
+				hr -= 12
+		elif hr == 0:
+			hr = 12
+		last_synced_str = "%02d-%02d-%04d %02d:%02d:%02d %s" % [t.day, t.month, t.year, hr, t.minute, t.second, ampm]
 		
 	var uid_str = FirebaseManager.get_current_user_id()
 	if uid_str == "":
@@ -1279,6 +1443,25 @@ func _on_ProfileButton_pressed():
 		btn_claim_profile.visible = is_guest and FirebaseManager.is_logged_in
 	if btn_manage_account:
 		btn_manage_account.visible = not is_guest and FirebaseManager.is_logged_in
+
+func _on_ProfileButton_pressed():
+	if is_instance_valid(ui_button_click):
+		ui_button_click.play()
+	
+	# Toggle: tapping the same button again closes the panel and restores home screen
+	if active_panel_name == "profile":
+		active_panel_name = ""
+		var p = $UI/Control.get_node_or_null("ProfilePanel")
+		if p: p.hide()
+		_show_active_screen()
+		return
+	
+	var was_panel_open = active_panel_name != ""
+	
+	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
+	if not profile_panel_node: return
+	
+	_update_profile_panel()
 	
 	_close_active_panel_only()
 
@@ -1331,18 +1514,6 @@ func _on_SettingsButton_pressed():
 		settings_panel.hide()
 		_show_active_screen()
 		return
-	
-	if name_input:
-		name_input.text = Global.player_name
-		var is_name_already_set = Global.has_changed_name
-		name_input.editable = not is_name_already_set
-		if name_submit_btn:
-			name_submit_btn.visible = not is_name_already_set
-			name_submit_btn.disabled = is_name_already_set
-			if is_name_already_set:
-				name_input.anchor_right = 0.9
-			else:
-				name_input.anchor_right = 0.6
 	
 	var was_panel_open = active_panel_name != ""
 	_close_active_panel_only()
@@ -1403,25 +1574,27 @@ func _on_ResetStats_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 		
-	# Reset scores
-	hiscores = {0: 0, 1: 0}
-	highest_levels = {0: 1, 1: 1}
-	stats = {
+	# Reset scores and stats
+	player_data = {
+		"player_name": Global.player_name,
+		"classic_highscore": 0,
+		"escalation_highscore": 0,
+		"escalation_highest_level": 1,
 		"total_games": 0,
-		"high_score": 0,
 		"playtime": 0.0,
 		"total_deaths": 0,
 		"total_revives": 0,
-		"total_distance": 0.0
+		"total_distance": 0.0,
+		"is_registered": false,
+		"last_updated": 0,
+		"has_changed_name_logged_in": false
 	}
 	save_hiscore()
 	update_score_display()
 	
-	# Reset settings
 	music_volume = 1.0
 	sfx_enabled = true
 	
-	# Apply audio settings
 	_apply_sfx_volume()
 	var raw_db = linear2db(music_volume) if music_volume > 0.001 else -80.0
 	# Apply standard -10 dB offset to prevent background music from overpowering the game
@@ -1508,8 +1681,8 @@ func _on_StartButton_up():
 func trigger_hit_phase():
 	if game_playing:
 		if mode_level == 1:
-			stats["total_deaths"] += 1
-		save_hiscore()
+			player_data["total_deaths"] += 1
+		save_hiscore(false)
 	
 	game_playing = false
 	$ObstacleSpawner.stop()
@@ -1545,18 +1718,11 @@ func trigger_grounded_phase():
 		if is_instance_valid(game_over_settings_button):
 			game_over_settings_button.show()
 			
-		if is_instance_valid(game_over_level_label):
-			if mode_level == 1:
-				game_over_level_label.text = "LEVEL " + str(current_speed_level)
-				game_over_level_label.show()
-			else:
-				game_over_level_label.hide()
-			
 		if game_over_panel:
 			if mode_level == 1:
-				stats["total_distance"] = stats.get("total_distance", 0.0) + run_distance
-				stats["playtime"] = stats.get("playtime", 0.0) + run_playtime
-			stats["high_score"] = hiscores[mode_level]
+				player_data["total_distance"] = player_data.get("total_distance", 0.0) + run_distance
+				player_data["playtime"] = player_data.get("playtime", 0.0) + run_playtime
+			
 			save_hiscore()
 				
 			var score_str = String(score)
@@ -1564,9 +1730,9 @@ func trigger_grounded_phase():
 				score_str += " (Lvl " + str(current_speed_level) + ")"
 			game_over_panel.get_node("VBox/ScoreRow/Value").text = score_str
 			
-			var best_str = String(hiscores[mode_level])
+			var best_str = String(get_highscore(mode_level))
 			if mode_level == 1:
-				best_str += " (Lvl " + str(highest_levels[mode_level]) + ")"
+				best_str += " (Lvl " + str(get_highest_level(mode_level)) + ")"
 			game_over_panel.get_node("VBox/HighScoreRow/Value").text = best_str
 			
 			if mode_level == 1 and is_new_high_score and score > 0:
@@ -1608,8 +1774,9 @@ class CustomSlider extends Control:
 	var is_dragging: bool = false
 	var width: float = 400.0
 	
-	func _init(initial_value: float = 0.5):
+	func _init(initial_value: float = 0.5, p_width: float = 400.0):
 		value = initial_value
+		width = p_width
 		rect_min_size = Vector2(width, 80)
 		
 		track = Panel.new()
@@ -1874,8 +2041,15 @@ func _position_floating_text(float_txt, restored_icon, txt_tween):
 var leaderboard_tabs: TabContainer
 var all_time_vbox: VBoxContainer
 var seasonal_vbox: VBoxContainer
+var all_time_header_margin: MarginContainer
+var seasonal_header_margin: MarginContainer
+var all_time_scroll: ScrollContainer
+var seasonal_scroll: ScrollContainer
 var name_input: LineEdit
 var name_submit_btn: Button
+var name_cancel_btn: Button
+var is_editing_name: bool = false
+var manage_name_hint: Label
 var game_over_name_prompt: Panel
 var game_over_name_input: LineEdit
 var game_over_prompt_msg: Label
@@ -1885,9 +2059,15 @@ var profile_disclaimer: RichTextLabel
 var inspector_panel_node: Panel
 var inspector_vbox: VBoxContainer
 var inspector_disclaimer: RichTextLabel
-var settings_uid_label: Label
 
 func _setup_firebase_ui():
+	# Resize Leaderboard Panel to give more space for separate level rows
+	if is_instance_valid(leaderboard_panel):
+		leaderboard_panel.margin_left = -525
+		leaderboard_panel.margin_top = -840
+		leaderboard_panel.margin_right = 525
+		leaderboard_panel.margin_bottom = 520
+
 	# 1. Leaderboard Panel Tabs
 	var coming_soon = leaderboard_panel.get_node("VBox/ComingSoon")
 	if coming_soon:
@@ -1899,21 +2079,80 @@ func _setup_firebase_ui():
 	if base_font:
 		leaderboard_tabs.add_font_override("font", base_font)
 	
-	var all_time_tab = ScrollContainer.new()
-	all_time_tab.name = "All-Time"
+	# Style the TabContainer tabs
+	var tab_panel_style = StyleBoxEmpty.new()
+	leaderboard_tabs.add_stylebox_override("panel", tab_panel_style)
 	
+	var active_tab_style = StyleBoxFlat.new()
+	active_tab_style.bg_color = Color(0.15, 0.18, 0.23, 1.0) # Matches #272d3d (original theme)
+	active_tab_style.border_width_left = 2
+	active_tab_style.border_width_top = 2
+	active_tab_style.border_width_right = 2
+	active_tab_style.border_width_bottom = 0
+	active_tab_style.border_color = Color(0.18, 0.21, 0.27, 1.0) # Matches #2f3545 (original theme border)
+	active_tab_style.corner_radius_top_left = 6
+	active_tab_style.corner_radius_top_right = 6
+	active_tab_style.content_margin_left = 15
+	active_tab_style.content_margin_right = 15
+	active_tab_style.content_margin_top = 8
+	active_tab_style.content_margin_bottom = 8
+	leaderboard_tabs.add_stylebox_override("tab_fg", active_tab_style)
+	
+	var inactive_tab_style = StyleBoxFlat.new()
+	inactive_tab_style.bg_color = Color(0.08, 0.1, 0.12, 1.0) # Matches #15171d (very dark)
+	inactive_tab_style.border_width_left = 2
+	inactive_tab_style.border_width_top = 2
+	inactive_tab_style.border_width_right = 2
+	inactive_tab_style.border_width_bottom = 2
+	inactive_tab_style.border_color = Color(0.13, 0.15, 0.18, 1.0)
+	inactive_tab_style.corner_radius_top_left = 6
+	inactive_tab_style.corner_radius_top_right = 6
+	inactive_tab_style.content_margin_left = 15
+	inactive_tab_style.content_margin_right = 15
+	inactive_tab_style.content_margin_top = 6
+	inactive_tab_style.content_margin_bottom = 6
+	leaderboard_tabs.add_stylebox_override("tab_bg", inactive_tab_style)
+	
+	leaderboard_tabs.add_color_override("font_color_bg", Color(0.53, 0.55, 0.61)) # original inactive tab text
+	leaderboard_tabs.add_color_override("font_color_fg", Color(1.0, 1.0, 1.0)) # original active tab text
+	
+	# --- All-Time Tab ---
+	var all_time_tab = VBoxContainer.new()
+	all_time_tab.name = "All-Time"
+	all_time_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	all_time_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	
+	all_time_header_margin = _create_leaderboard_header(base_font)
+	all_time_scroll = ScrollContainer.new()
 	all_time_vbox = VBoxContainer.new()
 	all_time_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	all_time_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	all_time_tab.add_child(all_time_vbox)
+	all_time_scroll.add_child(all_time_vbox)
 	
-	var seasonal_tab = ScrollContainer.new()
+	var all_time_table = _create_table_widget(all_time_header_margin, all_time_scroll)
+	all_time_tab.add_child(all_time_table)
+	
+	all_time_scroll.get_v_scrollbar().connect("visibility_changed", self, "_on_all_time_scrollbar_changed")
+	all_time_scroll.get_v_scrollbar().connect("item_rect_changed", self, "_on_all_time_scrollbar_changed")
+	
+	# --- Seasonal Tab ---
+	var seasonal_tab = VBoxContainer.new()
 	seasonal_tab.name = "Seasonal"
+	seasonal_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	seasonal_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	
+	seasonal_header_margin = _create_leaderboard_header(base_font)
+	seasonal_scroll = ScrollContainer.new()
 	seasonal_vbox = VBoxContainer.new()
 	seasonal_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	seasonal_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	seasonal_tab.add_child(seasonal_vbox)
+	seasonal_scroll.add_child(seasonal_vbox)
+	
+	var seasonal_table = _create_table_widget(seasonal_header_margin, seasonal_scroll)
+	seasonal_tab.add_child(seasonal_table)
+	
+	seasonal_scroll.get_v_scrollbar().connect("visibility_changed", self, "_on_seasonal_scrollbar_changed")
+	seasonal_scroll.get_v_scrollbar().connect("item_rect_changed", self, "_on_seasonal_scrollbar_changed")
 	
 	leaderboard_tabs.add_child(all_time_tab)
 	leaderboard_tabs.add_child(seasonal_tab)
@@ -1923,92 +2162,42 @@ func _setup_firebase_ui():
 	# Adjust existing Settings Panel controls dynamically to prevent overlap
 	var music_label = settings_panel.get_node_or_null("MusicLabel")
 	if music_label:
-		music_label.margin_top = 130
-		music_label.margin_bottom = 170
+		music_label.margin_top = 200
+		music_label.margin_bottom = 260
 		
 	var music_slider_anchor = settings_panel.get_node_or_null("MusicSliderAnchor")
 	if music_slider_anchor:
-		music_slider_anchor.margin_top = 180
-		music_slider_anchor.margin_bottom = 240
+		music_slider_anchor.margin_left = -350
+		music_slider_anchor.margin_right = 350
+		music_slider_anchor.margin_top = 280
+		music_slider_anchor.margin_bottom = 360
 		
 	var sfx_label = settings_panel.get_node_or_null("SfxLabel")
 	if sfx_label:
-		sfx_label.margin_top = 260
-		sfx_label.margin_bottom = 300
+		sfx_label.margin_top = 460
+		sfx_label.margin_bottom = 520
 		
 	var sfx_toggle_anchor = settings_panel.get_node_or_null("SfxToggleAnchor")
 	if sfx_toggle_anchor:
-		sfx_toggle_anchor.margin_top = 310
-		sfx_toggle_anchor.margin_bottom = 370
+		sfx_toggle_anchor.margin_top = 540
+		sfx_toggle_anchor.margin_bottom = 620
 		
 	var reset_btn = settings_panel.get_node_or_null("ResetButton")
 	if reset_btn:
 		reset_btn.hide()
 		reset_btn.disabled = true
 		
+	var version_lbl = settings_panel.get_node_or_null("VersionLabel")
+	if version_lbl:
+		version_lbl.margin_top = -170
+		version_lbl.margin_bottom = -145
+		
 	var close_btn = settings_panel.get_node_or_null("CloseSettings")
 	if close_btn:
-		close_btn.margin_top = -110
+		close_btn.margin_left = -140
+		close_btn.margin_right = 140
+		close_btn.margin_top = -120
 		close_btn.margin_bottom = -30
-
-	# 2. Settings Panel: Player Name Input
-	var name_label = Label.new()
-	name_label.text = "Player Name"
-	name_label.align = Label.ALIGN_CENTER
-	name_label.margin_top = 390
-	name_label.margin_bottom = 420
-	name_label.anchor_left = 0.1
-	name_label.anchor_right = 0.9
-	if base_font: name_label.add_font_override("font", base_font)
-	settings_panel.add_child(name_label)
-	
-	name_input = LineEdit.new()
-	name_input.text = Global.player_name
-	var is_name_already_set = Global.has_changed_name
-	name_input.editable = not is_name_already_set
-	name_input.placeholder_text = "Enter your name..."
-	name_input.anchor_left = 0.1
-	name_input.anchor_right = 0.9 if is_name_already_set else 0.6
-	name_input.margin_top = 430
-	name_input.margin_bottom = 480
-	name_input.align = LineEdit.ALIGN_CENTER
-	if base_font: name_input.add_font_override("font", base_font)
-	name_input.connect("text_changed", self, "_on_name_input_changed")
-	name_input.connect("text_entered", self, "_on_name_input_entered")
-	name_input.connect("focus_exited", self, "_on_name_input_focus_exited")
-	settings_panel.add_child(name_input)
- 
-	name_submit_btn = Button.new()
-	name_submit_btn.text = "Set"
-	name_submit_btn.anchor_left = 0.65
-	name_submit_btn.anchor_right = 0.9
-	name_submit_btn.margin_top = 430
-	name_submit_btn.margin_bottom = 480
-	name_submit_btn.visible = not is_name_already_set
-	name_submit_btn.disabled = is_name_already_set
-	if base_font: name_submit_btn.add_font_override("font", base_font)
-	if close_btn:
-		name_submit_btn.add_stylebox_override("normal", close_btn.get_stylebox("normal"))
-		name_submit_btn.add_stylebox_override("hover", close_btn.get_stylebox("hover"))
-		name_submit_btn.add_stylebox_override("pressed", close_btn.get_stylebox("pressed"))
-	name_submit_btn.connect("pressed", self, "_on_name_submit_pressed")
-	settings_panel.add_child(name_submit_btn)
-
-	# 2.5 Settings Panel: Player UID Label
-	settings_uid_label = Label.new()
-	settings_uid_label.align = Label.ALIGN_CENTER
-	settings_uid_label.valign = Label.VALIGN_CENTER
-	settings_uid_label.margin_top = 500
-	settings_uid_label.margin_bottom = 530
-	settings_uid_label.anchor_left = 0.1
-	settings_uid_label.anchor_right = 0.9
-	var uid_font = DynamicFont.new()
-	uid_font.font_data = load("res://assets/fonts/Lucida Console Regular.ttf")
-	uid_font.size = 18
-	settings_uid_label.add_font_override("font", uid_font)
-	settings_uid_label.add_color_override("font_color", Color(0.5, 0.9, 0.5))
-	settings_panel.add_child(settings_uid_label)
-	_update_settings_uid_display()
 
 	# 3. Game Over Name Prompt
 	game_over_name_prompt = Panel.new()
@@ -2091,7 +2280,7 @@ func _setup_firebase_ui():
 	
 	game_over_name_input = LineEdit.new()
 	game_over_name_input.placeholder_text = "Your Name"
-	game_over_name_input.max_length = 25
+	game_over_name_input.max_length = 20
 	game_over_name_input.anchor_left = 0.15
 	game_over_name_input.anchor_right = 0.85
 	game_over_name_input.margin_top = 200
@@ -2100,6 +2289,13 @@ func _setup_firebase_ui():
 	game_over_name_input.add_stylebox_override("normal", input_style)
 	game_over_name_input.add_stylebox_override("focus", input_focus)
 	game_over_name_input.add_color_override("placeholder_color", Color(0.6, 0.6, 0.7))
+	game_over_name_input.add_color_override("font_color", Color(0.95, 0.95, 0.95))
+	game_over_name_input.add_color_override("cursor_color", Color(1, 1, 1))
+	game_over_name_input.caret_blink = true
+	game_over_name_input.caret_blink_speed = 0.65
+	game_over_name_input.add_constant_override("caret_width", 3)
+	game_over_name_input.connect("focus_entered", self, "_on_game_over_name_focus_entered")
+	game_over_name_input.connect("focus_exited", self, "_on_game_over_name_focus_exited")
 	
 	var input_font = DynamicFont.new()
 	input_font.font_data = load("res://assets/fonts/LilitaOne-Regular.ttf")
@@ -2191,7 +2387,120 @@ func _setup_firebase_ui():
 	# Connect to Firebase signals
 	FirebaseManager.connect("leaderboard_updated", self, "_on_leaderboard_updated")
 
-func _on_name_input_changed(new_text: String):
+func _create_leaderboard_header(base_font: Font) -> Control:
+	var header = HBoxContainer.new()
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_constant_override("separation", 0)
+	
+	var h_rank = Label.new()
+	h_rank.text = "Rank"
+	h_rank.rect_min_size = Vector2(120, 0)
+	h_rank.align = Label.ALIGN_CENTER
+	if base_font: h_rank.add_font_override("font", base_font)
+	
+	var h_player = Label.new()
+	h_player.text = "Player"
+	h_player.rect_min_size = Vector2(560, 0)
+	h_player.align = Label.ALIGN_CENTER
+	if base_font: h_player.add_font_override("font", base_font)
+	
+	var h_score = Label.new()
+	h_score.text = "Score"
+	h_score.rect_min_size = Vector2(160, 0)
+	h_score.align = Label.ALIGN_CENTER
+	if base_font: h_score.add_font_override("font", base_font)
+	
+	var h_lvl = Label.new()
+	h_lvl.text = "Lvl"
+	h_lvl.rect_min_size = Vector2(120, 0)
+	h_lvl.align = Label.ALIGN_CENTER
+	if base_font: h_lvl.add_font_override("font", base_font)
+	
+	var left_spacer = Control.new()
+	left_spacer.rect_min_size = Vector2(20, 0)
+	header.add_child(left_spacer)
+	
+	header.add_child(h_rank)
+	header.add_child(h_player)
+	header.add_child(h_score)
+	header.add_child(h_lvl)
+	var header_panel = PanelContainer.new()
+	header_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var header_style = StyleBoxFlat.new()
+	header_style.bg_color = Color(0.15, 0.18, 0.23, 1.0) # Matches #272d3d (original theme)
+	header_style.content_margin_top = 10
+	header_style.content_margin_bottom = 10
+	header_style.content_margin_left = 0
+	header_style.content_margin_right = 0
+	header_panel.add_stylebox_override("panel", header_style)
+	header_panel.add_child(header)
+	
+	var margin_container = MarginContainer.new()
+	margin_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin_container.add_constant_override("margin_top", 0)
+	margin_container.add_constant_override("margin_bottom", 0)
+	margin_container.add_constant_override("margin_left", 0)
+	margin_container.add_constant_override("margin_right", 0)
+	margin_container.add_child(header_panel)
+	
+	return margin_container
+ 
+func _create_table_widget(header: Control, scroll: ScrollContainer) -> Control:
+	var table_panel = PanelContainer.new()
+	table_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	table_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	
+	var table_style = StyleBoxFlat.new()
+	table_style.bg_color = Color(0.13, 0.15, 0.18, 1.0) # Matches #20232a (original theme background)
+	table_style.border_width_left = 2
+	table_style.border_width_top = 2
+	table_style.border_width_right = 2
+	table_style.border_width_bottom = 2
+	table_style.border_color = Color(0.18, 0.21, 0.27, 1.0) # Matches #2f3545 (original theme border)
+	table_style.corner_radius_top_left = 8
+	table_style.corner_radius_top_right = 8
+	table_style.corner_radius_bottom_left = 8
+	table_style.corner_radius_bottom_right = 8
+	table_style.content_margin_left = 0
+	table_style.content_margin_right = 0
+	table_style.content_margin_top = 0
+	table_style.content_margin_bottom = 0
+	table_panel.add_stylebox_override("panel", table_style)
+	table_panel.rect_clip_content = true
+	
+	var table_vbox = VBoxContainer.new()
+	table_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	table_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_vbox.add_constant_override("separation", 0)
+	table_panel.add_child(table_vbox)
+	
+	table_vbox.add_child(header)
+	
+	var horizontal_divider = ColorRect.new()
+	horizontal_divider.rect_min_size = Vector2(0, 2)
+	horizontal_divider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	horizontal_divider.color = Color(0.18, 0.21, 0.27, 1.0)
+	table_vbox.add_child(horizontal_divider)
+	
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_vbox.add_child(scroll)
+	
+	return table_panel
+
+func _on_all_time_scrollbar_changed():
+	if is_instance_valid(all_time_scroll) and is_instance_valid(all_time_header_margin):
+		var scrollbar = all_time_scroll.get_v_scrollbar()
+		var w = scrollbar.rect_size.x if scrollbar.visible else 0
+		all_time_header_margin.add_constant_override("margin_right", w)
+
+func _on_seasonal_scrollbar_changed():
+	if is_instance_valid(seasonal_scroll) and is_instance_valid(seasonal_header_margin):
+		var scrollbar = seasonal_scroll.get_v_scrollbar()
+		var w = scrollbar.rect_size.x if scrollbar.visible else 0
+		seasonal_header_margin.add_constant_override("margin_right", w)
+
+func _on_name_input_changed(_new_text: String):
 	pass
 
 func _on_name_input_entered(_new_text: String):
@@ -2200,29 +2509,62 @@ func _on_name_input_entered(_new_text: String):
 func _on_name_input_focus_exited():
 	pass # Save will happen when pressing Set or closing panel
 
+func _on_game_over_name_focus_entered():
+	if is_instance_valid(game_over_name_input):
+		game_over_name_input.align = LineEdit.ALIGN_LEFT
+		game_over_name_input.text = game_over_name_input.text
+
+func _on_game_over_name_focus_exited():
+	if is_instance_valid(game_over_name_input):
+		game_over_name_input.align = LineEdit.ALIGN_CENTER
+		game_over_name_input.text = game_over_name_input.text
+
+func _on_name_cancel_pressed():
+	if is_instance_valid(ui_button_click):
+		ui_button_click.play()
+	is_editing_name = false
+	_update_manage_account_name_ui()
+
 
 
 func _on_name_submit_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 		
+	var is_registered = FirebaseManager.get_is_registered()
+	var has_changed = bool(player_data.get("has_changed_name_logged_in", false))
+	
+	if is_registered and not has_changed:
+		if not is_editing_name:
+			is_editing_name = true
+			_update_manage_account_name_ui()
+			if is_instance_valid(name_input):
+				name_input.grab_focus()
+				name_input.caret_position = name_input.text.length()
+			return
+			
 	var typed_name = name_input.text.strip_edges() if name_input else ""
-	if typed_name == "" or typed_name == Global.player_name:
+	if typed_name == "":
+		return
+		
+	if typed_name == Global.player_name:
+		is_editing_name = false
+		_update_manage_account_name_ui()
 		return
 		
 	Global.player_name = typed_name
+	
+	if is_registered:
+		player_data["has_changed_name_logged_in"] = true
 	Global.has_changed_name = true
-	if name_input:
-		name_input.editable = false
-		name_input.anchor_right = 0.9
-	if name_submit_btn:
-		name_submit_btn.disabled = true
-		name_submit_btn.visible = false
+		
+	is_editing_name = false
+	_update_manage_account_name_ui()
 		
 	save_hiscore()
-	var current_hiscore = hiscores.get(1, 0)
+	var current_hiscore = get_highscore(1)
 	if current_hiscore > 0:
-		FirebaseManager.submit_score(current_hiscore, 1, Global.player_name)
+		FirebaseManager.submit_score(current_hiscore, 1, Global.player_name, get_highest_level(1))
 
 func _on_submit_name_pressed():
 	if is_instance_valid(ui_button_click):
@@ -2244,7 +2586,7 @@ func _on_submit_name_pressed():
 	game_over_name_prompt.hide()
 	
 	# Submit score now that we have/confirmed the name
-	FirebaseManager.submit_score(score, mode_level, Global.player_name)
+	FirebaseManager.submit_score(score, mode_level, Global.player_name, current_speed_level)
 
 func _on_skip_submit_pressed():
 	if is_instance_valid(ui_button_click):
@@ -2277,11 +2619,12 @@ func _on_stats_sync_finished(success: bool, timestamp: int):
 	last_sync_success = success
 	if success:
 		last_sync_timestamp = timestamp
+		save_hiscore(false)
 		
 	# Live-refresh the Stats Panel if it's currently open
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node and profile_panel_node.visible:
-		_on_ProfileButton_pressed()
+		_update_profile_panel()
 
 func _on_CloseInspector_pressed():
 	if is_instance_valid(ui_button_click):
@@ -2306,8 +2649,13 @@ func _on_leaderboard_player_clicked(uid: String, player_name: String):
 			
 		inspector_disclaimer.bbcode_text = "[center]Loading stats from Cloud...[/center]"
 		
+		var stats_loading = _create_vbox_spinner("")
+		inspector_vbox.add_child(stats_loading)
+		var stats_spinner = stats_loading.find_node("SpinnerIcon", true, false)
+		_start_spinner_animation(stats_spinner)
+		
 		# Fetch from firestore
-		var collection = Firebase.Firestore.collection("rushybird_player_stats")
+		var collection = Firebase.Firestore.collection("player_data_rushybird")
 		var task = collection.get_doc(uid)
 		var doc = yield(task, "completed")
 		
@@ -2362,7 +2710,7 @@ func _on_leaderboard_player_clicked(uid: String, player_name: String):
 		var base_font = $UI/Control/MenuInfoLabel.get_font("font")
 		var font = base_font.duplicate() if base_font else null
 		if font:
-			font.size = 42
+			font.size = 46
 			
 		for stat_pair in stats_labels:
 			var row = HBoxContainer.new()
@@ -2384,32 +2732,30 @@ func _on_leaderboard_player_clicked(uid: String, player_name: String):
 			inspector_vbox.add_child(row)
 			
 		var timestamp = int(doc.get_value("last_updated"))
-		var t = OS.get_datetime_from_unix_time(timestamp)
-		inspector_disclaimer.bbcode_text = "[center]Last Active: %02d-%02d-%04d %02d:%02d[/center]" % [t.day, t.month, t.year, t.hour, t.minute]
+		var local_offset = get_local_timezone_offset()
+		var t = OS.get_datetime_from_unix_time(timestamp + local_offset)
+		var hour_12 = t.hour % 12
+		if hour_12 == 0:
+			hour_12 = 12
+		var am_pm = "AM" if t.hour < 12 else "PM"
+		inspector_disclaimer.bbcode_text = "[center]Last Active: %02d-%02d-%04d %02d:%02d %s[/center]" % [t.day, t.month, t.year, hour_12, t.minute, am_pm]
 
 func _on_auth_state_changed(is_logged_in: bool):
-	_update_settings_uid_display()
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node and profile_panel_node.visible:
 		_on_ProfileButton_pressed()
 	
 	if is_logged_in and not FirebaseManager.is_claiming_profile():
-		# Auto-sync stats and scores on startup/login
-		FirebaseManager.submit_stats(stats, hiscores, highest_levels, Global.player_name)
-		var escalation_hs = hiscores.get(1, 0)
+		# Re-sync stats in case they were updated
+		FirebaseManager.submit_stats(player_data)
+		var escalation_hs = get_highscore(1)
 		if escalation_hs > 0:
-			FirebaseManager.submit_score(escalation_hs, 1, Global.player_name)
-
-func _update_settings_uid_display():
-	if is_instance_valid(settings_uid_label):
-		var uid = FirebaseManager.get_current_user_id()
-		if uid != "":
-			settings_uid_label.text = "UID: " + uid
+			FirebaseManager.submit_score(escalation_hs, 1, Global.player_name, get_highest_level(1))
 		else:
-			settings_uid_label.text = "UID: Connecting..."
+			FirebaseManager.fetch_leaderboards()
 
 func _get_seasonal_reset_time_string() -> String:
-	var now = OS.get_datetime()
+	var now = OS.get_datetime(true)
 	
 	# Determine next month and year
 	var next_month = now.month + 1
@@ -2429,7 +2775,7 @@ func _get_seasonal_reset_time_string() -> String:
 	}
 	
 	var now_unix = OS.get_unix_time()
-	var target_unix = OS.get_unix_time_from_datetime(target_time_dict)
+	var target_unix = Time.get_unix_time_from_datetime_dict(target_time_dict)
 	
 	var diff_seconds = target_unix - now_unix
 	if diff_seconds <= 0:
@@ -2456,6 +2802,7 @@ func _get_seasonal_reset_time_string() -> String:
 var claim_profile_panel: Panel
 var claim_email_input: LineEdit
 var claim_pass_input: LineEdit
+var btn_google_claim: Button
 
 
 var conflict_panel: Panel
@@ -2469,15 +2816,172 @@ var btn_keep_selected: Button
 var overwrite_confirm_panel: Panel
 var selected_profile_type: String = ""
 
+var lbl_device_name: Label
 var lbl_device_classic: Label
 var lbl_device_escalation: Label
 var lbl_device_games: Label
 var lbl_device_playtime: Label
 
+var lbl_cloud_name: Label
 var lbl_cloud_classic: Label
 var lbl_cloud_escalation: Label
 var lbl_cloud_games: Label
 var lbl_cloud_playtime: Label
+func _create_loading_overlay():
+	loading_overlay = Panel.new()
+	loading_overlay.name = "FullscreenLoadingOverlay"
+	loading_overlay.anchor_right = 1.0
+	loading_overlay.anchor_bottom = 1.0
+	loading_overlay.visible = false
+	
+	var panel_style = StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.0, 0.0, 0.0, 0.85) # Solid dark translucent background
+	loading_overlay.add_stylebox_override("panel", panel_style)
+	
+	var center_container = CenterContainer.new()
+	center_container.anchor_right = 1.0
+	center_container.anchor_bottom = 1.0
+	loading_overlay.add_child(center_container)
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_constant_override("separation", 25)
+	center_container.add_child(vbox)
+	
+	var center_spinner = CenterContainer.new()
+	vbox.add_child(center_spinner)
+	
+	var spinner_container = Control.new()
+	spinner_container.rect_min_size = Vector2(160, 160)
+	center_spinner.add_child(spinner_container)
+	
+	# Background track (still)
+	var bg_circle = preload("res://addons/FontAwesome5/FontAwesome.gd").new()
+	bg_circle.icon_type = "regular"
+	bg_circle.icon_name = "circle"
+	bg_circle.icon_size = 140
+	bg_circle.rect_min_size = Vector2(140, 140)
+	bg_circle.rect_size = Vector2(140, 140)
+	bg_circle.rect_position = Vector2(10, 10)
+	bg_circle.align = Label.ALIGN_CENTER
+	bg_circle.valign = Label.VALIGN_CENTER
+	bg_circle.add_color_override("font_color", Color(1.0, 1.0, 1.0, 0.15))
+	spinner_container.add_child(bg_circle)
+	
+	# Foreground spinner (rotating)
+	loading_spinner_icon = preload("res://addons/FontAwesome5/FontAwesome.gd").new()
+	loading_spinner_icon.name = "SpinnerIcon"
+	loading_spinner_icon.icon_type = "solid"
+	loading_spinner_icon.icon_name = "circle-notch"
+	loading_spinner_icon.icon_size = 140
+	loading_spinner_icon.rect_min_size = Vector2(140, 140)
+	loading_spinner_icon.rect_size = Vector2(140, 140)
+	loading_spinner_icon.rect_pivot_offset = Vector2(70, 70)
+	loading_spinner_icon.rect_position = Vector2(10, 10)
+	loading_spinner_icon.align = Label.ALIGN_CENTER
+	loading_spinner_icon.valign = Label.VALIGN_CENTER
+	loading_spinner_icon.add_color_override("font_color", Color(0.4, 0.8, 0.2)) # Premium accent green
+	spinner_container.add_child(loading_spinner_icon)
+	
+	var loading_label = Label.new()
+	loading_label.text = "Loading..."
+	loading_label.align = Label.ALIGN_CENTER
+	var base_font = $UI/Control/MenuInfoLabel.get_font("font")
+	if base_font:
+		var font_dup = base_font.duplicate()
+		font_dup.size = 36
+		loading_label.add_font_override("font", font_dup)
+	loading_label.add_color_override("font_color", Color(0.9, 0.9, 0.9))
+	vbox.add_child(loading_label)
+	
+	$UI/Control.add_child(loading_overlay)
+
+func _show_loading(text: String = "Loading..."):
+	if not is_instance_valid(loading_overlay):
+		return
+		
+	var vbox = loading_overlay.get_child(0).get_child(0)
+	var label = vbox.get_child(1)
+	label.text = text
+	
+	loading_overlay.visible = true
+	_start_spinner_animation(loading_spinner_icon)
+
+func _hide_loading():
+	if is_instance_valid(loading_overlay):
+		loading_overlay.visible = false
+		var anima = Anima.begin(loading_spinner_icon)
+		anima.stop()
+
+func _create_vbox_spinner(text: String) -> Control:
+	var center_container = CenterContainer.new()
+	center_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	
+	var vbox = VBoxContainer.new()
+	vbox.add_constant_override("separation", 10)
+	center_container.add_child(vbox)
+	
+	var center_spinner = CenterContainer.new()
+	vbox.add_child(center_spinner)
+	
+	var spinner_container = Control.new()
+	spinner_container.rect_min_size = Vector2(100, 100)
+	center_spinner.add_child(spinner_container)
+	
+	# Background track (still)
+	var bg = preload("res://addons/FontAwesome5/FontAwesome.gd").new()
+	bg.icon_type = "regular"
+	bg.icon_name = "circle"
+	bg.icon_size = 80
+	bg.rect_min_size = Vector2(80, 80)
+	bg.rect_size = Vector2(80, 80)
+	bg.rect_position = Vector2(10, 10)
+	bg.align = Label.ALIGN_CENTER
+	bg.valign = Label.VALIGN_CENTER
+	bg.add_color_override("font_color", Color(1.0, 1.0, 1.0, 0.15))
+	spinner_container.add_child(bg)
+	
+	# Foreground spinner (rotating)
+	var spinner = preload("res://addons/FontAwesome5/FontAwesome.gd").new()
+	spinner.name = "SpinnerIcon"
+	spinner.icon_type = "solid"
+	spinner.icon_name = "circle-notch"
+	spinner.icon_size = 80
+	spinner.rect_min_size = Vector2(80, 80)
+	spinner.rect_size = Vector2(80, 80)
+	spinner.rect_pivot_offset = Vector2(40, 40)
+	spinner.rect_position = Vector2(10, 10)
+	spinner.align = Label.ALIGN_CENTER
+	spinner.valign = Label.VALIGN_CENTER
+	spinner.add_color_override("font_color", Color(0.4, 0.8, 0.2))
+	spinner_container.add_child(spinner)
+	
+	if text != "":
+		var label = Label.new()
+		label.text = text
+		label.align = Label.ALIGN_CENTER
+		var base_font = $UI/Control/MenuInfoLabel.get_font("font")
+		if base_font:
+			var font_dup = base_font.duplicate()
+			font_dup.size = 28
+			label.add_font_override("font", font_dup)
+		label.add_color_override("font_color", Color(0.8, 0.8, 0.8))
+		vbox.add_child(label)
+		
+	return center_container
+
+func _start_spinner_animation(spinner: Control):
+	var anima = Anima.begin(spinner)
+	anima.clear()
+	anima.then({
+		node = spinner,
+		property = "rotation",
+		from = 0.0,
+		to = 360.0,
+		duration = 1.0,
+		easing = Anima.EASING.LINEAR
+	})
+	anima.loop()
 
 func _create_claim_profile_panel():
 	claim_profile_panel = Panel.new()
@@ -2494,15 +2998,30 @@ func _create_claim_profile_panel():
 	title.text = "Link Account"
 	title.align = Label.ALIGN_CENTER
 	title.anchor_right = 1.0
-	title.margin_top = 120
-	title.margin_bottom = 220
-	var title_font = load("res://resources/Theme.tres").get_font("font", "Button")
-	if title_font: title.add_font_override("font", title_font)
+	title.margin_top = 230
+	title.margin_bottom = 330
+	var title_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if title_font:
+		title_font.size = 65
+		title_font.outline_size = 4
+		title_font.outline_color = Color(0.08, 0.1, 0.15)
+		title.add_font_override("font", title_font)
 	claim_profile_panel.add_child(title)
+	
+	# Divider
+	var divider = Panel.new()
+	divider.anchor_left = 0.1
+	divider.anchor_right = 0.9
+	divider.margin_top = 350
+	divider.margin_bottom = 353
+	var div_style = StyleBoxFlat.new()
+	div_style.bg_color = Color(0.25, 0.3, 0.45, 0.7)
+	divider.add_stylebox_override("panel", div_style)
+	claim_profile_panel.add_child(divider)
 	
 	var input_font = DynamicFont.new()
 	input_font.font_data = load("res://assets/fonts/LilitaOne-Regular.ttf")
-	input_font.size = 36
+	input_font.size = 50
 	input_font.outline_size = 2
 	input_font.outline_color = Color(0.1, 0.1, 0.1, 0.8)
 	
@@ -2513,12 +3032,12 @@ func _create_claim_profile_panel():
 	line_edit_style.border_width_right = 3
 	line_edit_style.border_width_bottom = 3
 	line_edit_style.border_color = Color(0.2, 0.2, 0.3)
-	line_edit_style.corner_radius_top_left = 12
-	line_edit_style.corner_radius_top_right = 12
-	line_edit_style.corner_radius_bottom_right = 12
-	line_edit_style.corner_radius_bottom_left = 12
-	line_edit_style.content_margin_left = 20
-	line_edit_style.content_margin_right = 20
+	line_edit_style.corner_radius_top_left = 20
+	line_edit_style.corner_radius_top_right = 20
+	line_edit_style.corner_radius_bottom_right = 20
+	line_edit_style.corner_radius_bottom_left = 20
+	line_edit_style.content_margin_left = 30
+	line_edit_style.content_margin_right = 30
 	
 	var line_edit_focus = line_edit_style.duplicate()
 	line_edit_focus.border_color = Color(0.4, 0.8, 0.2) # Active green border on focus
@@ -2528,13 +3047,17 @@ func _create_claim_profile_panel():
 	claim_email_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
 	claim_email_input.anchor_left = 0.15
 	claim_email_input.anchor_right = 0.85
-	claim_email_input.margin_top = 300
-	claim_email_input.margin_bottom = 380
+	claim_email_input.margin_top = 430
+	claim_email_input.margin_bottom = 530
 	claim_email_input.add_font_override("font", input_font)
 	claim_email_input.add_stylebox_override("normal", line_edit_style)
 	claim_email_input.add_stylebox_override("focus", line_edit_focus)
 	claim_email_input.add_color_override("font_color", Color(1, 1, 1))
+	claim_email_input.add_color_override("cursor_color", Color(1, 1, 1))
 	claim_email_input.add_color_override("placeholder_color", Color(0.6, 0.6, 0.7))
+	claim_email_input.caret_blink = true
+	claim_email_input.caret_blink_speed = 0.65
+	claim_email_input.add_constant_override("caret_width", 3)
 	claim_profile_panel.add_child(claim_email_input)
 	
 	claim_pass_input = LineEdit.new()
@@ -2543,21 +3066,25 @@ func _create_claim_profile_panel():
 	claim_pass_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
 	claim_pass_input.anchor_left = 0.15
 	claim_pass_input.anchor_right = 0.85
-	claim_pass_input.margin_top = 420
-	claim_pass_input.margin_bottom = 500
+	claim_pass_input.margin_top = 580
+	claim_pass_input.margin_bottom = 680
 	claim_pass_input.add_font_override("font", input_font)
 	claim_pass_input.add_stylebox_override("normal", line_edit_style)
 	claim_pass_input.add_stylebox_override("focus", line_edit_focus)
 	claim_pass_input.add_color_override("font_color", Color(1, 1, 1))
+	claim_pass_input.add_color_override("cursor_color", Color(1, 1, 1))
 	claim_pass_input.add_color_override("placeholder_color", Color(0.6, 0.6, 0.7))
+	claim_pass_input.caret_blink = true
+	claim_pass_input.caret_blink_speed = 0.65
+	claim_pass_input.add_constant_override("caret_width", 3)
 	claim_profile_panel.add_child(claim_pass_input)
 	
 	var btn_submit = Button.new()
 	btn_submit.text = "Link Account"
 	btn_submit.anchor_left = 0.15
 	btn_submit.anchor_right = 0.85
-	btn_submit.margin_top = 560
-	btn_submit.margin_bottom = 640
+	btn_submit.margin_top = 740
+	btn_submit.margin_bottom = 840
 	btn_submit.connect("pressed", self, "_on_SubmitClaim_pressed")
 	
 	var ref_btn = $UI/Control/SettingsPanel/CloseSettings
@@ -2565,7 +3092,9 @@ func _create_claim_profile_panel():
 		var ref_font = ref_btn.get_font("font")
 		if ref_font:
 			var green_font = ref_font.duplicate()
-			green_font.outline_color = Color(0.2, 0.5, 0.1) # Green outline matching Start button
+			green_font.size = 45
+			green_font.outline_size = 3
+			green_font.outline_color = Color(0.15, 0.4, 0.08) # Green outline matching Start button
 			btn_submit.add_font_override("font", green_font)
 			
 	var green_normal = StyleBoxFlat.new()
@@ -2580,6 +3109,8 @@ func _create_claim_profile_panel():
 	green_normal.shadow_color = Color(0, 0, 0, 0.2)
 	green_normal.shadow_size = 4
 	green_normal.shadow_offset = Vector2(0, 2)
+	green_normal.content_margin_left = 30
+	green_normal.content_margin_right = 30
 	
 	var green_hover = StyleBoxFlat.new()
 	green_hover.bg_color = Color(0.45, 0.85, 0.25)
@@ -2593,6 +3124,8 @@ func _create_claim_profile_panel():
 	green_hover.shadow_color = Color(0, 0, 0, 0.25)
 	green_hover.shadow_size = 6
 	green_hover.shadow_offset = Vector2(0, 3)
+	green_hover.content_margin_left = 30
+	green_hover.content_margin_right = 30
 
 	var green_pressed = StyleBoxFlat.new()
 	green_pressed.bg_color = Color(0.35, 0.7, 0.15)
@@ -2607,6 +3140,8 @@ func _create_claim_profile_panel():
 	green_pressed.shadow_color = Color(0, 0, 0, 0.15)
 	green_pressed.shadow_size = 2
 	green_pressed.shadow_offset = Vector2(0, 1)
+	green_pressed.content_margin_left = 30
+	green_pressed.content_margin_right = 30
 
 	btn_submit.add_stylebox_override("normal", green_normal)
 	btn_submit.add_stylebox_override("hover", green_hover)
@@ -2616,18 +3151,72 @@ func _create_claim_profile_panel():
 	btn_submit.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
 	claim_profile_panel.add_child(btn_submit)
 	
+	btn_google_claim = Button.new()
+	btn_google_claim.text = "Sign in with Google"
+	btn_google_claim.anchor_left = 0.15
+	btn_google_claim.anchor_right = 0.85
+	btn_google_claim.connect("pressed", self, "_on_GoogleClaim_pressed")
+	
+	if ref_btn:
+		var ref_font = ref_btn.get_font("font")
+		if ref_font:
+			var google_font = ref_font.duplicate()
+			google_font.size = 45
+			google_font.outline_size = 3
+			google_font.outline_color = Color(0.1, 0.2, 0.4) # Blue outline
+			btn_google_claim.add_font_override("font", google_font)
+			
+	var google_normal = StyleBoxFlat.new()
+	google_normal.bg_color = Color(0.26, 0.52, 0.96) # Google Blue
+	google_normal.anti_aliasing = true
+	google_normal.corner_radius_top_left = 20
+	google_normal.corner_radius_top_right = 20
+	google_normal.corner_radius_bottom_right = 20
+	google_normal.corner_radius_bottom_left = 20
+	google_normal.border_width_bottom = 8
+	google_normal.border_color = Color(0.18, 0.4, 0.75) # Darker Google Blue
+	google_normal.shadow_color = Color(0, 0, 0, 0.2)
+	google_normal.shadow_size = 4
+	google_normal.shadow_offset = Vector2(0, 2)
+	google_normal.content_margin_left = 30
+	google_normal.content_margin_right = 30
+	
+	var google_hover = google_normal.duplicate()
+	google_hover.bg_color = Color(0.3, 0.57, 0.98)
+	google_hover.border_color = Color(0.2, 0.44, 0.78)
+	google_hover.shadow_size = 6
+	google_hover.shadow_offset = Vector2(0, 3)
+	
+	var google_pressed = google_normal.duplicate()
+	google_pressed.bg_color = Color(0.22, 0.46, 0.88)
+	google_pressed.border_width_top = 4
+	google_pressed.border_width_bottom = 4
+	google_pressed.border_color = Color(0.15, 0.35, 0.7)
+	google_pressed.shadow_size = 2
+	google_pressed.shadow_offset = Vector2(0, 1)
+	
+	btn_google_claim.add_stylebox_override("normal", google_normal)
+	btn_google_claim.add_stylebox_override("hover", google_hover)
+	btn_google_claim.add_stylebox_override("pressed", google_pressed)
+	btn_google_claim.add_color_override("font_color", Color(1, 1, 1))
+	btn_google_claim.add_color_override("font_color_hover", Color(1, 1, 1))
+	btn_google_claim.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
+	claim_profile_panel.add_child(btn_google_claim)
+	
 	var btn_cancel = Button.new()
 	btn_cancel.text = "Cancel"
 	btn_cancel.anchor_left = 0.15
 	btn_cancel.anchor_right = 0.85
-	btn_cancel.margin_top = 680
-	btn_cancel.margin_bottom = 760
 	btn_cancel.connect("pressed", self, "_on_CancelClaim_pressed")
 	
 	if ref_btn:
 		var ref_font = ref_btn.get_font("font")
 		if ref_font:
-			btn_cancel.add_font_override("font", ref_font)
+			var cancel_font = ref_font.duplicate()
+			cancel_font.size = 45
+			cancel_font.outline_size = 3
+			cancel_font.outline_color = Color(0.4, 0.1, 0.1) # Burgundy red outline
+			btn_cancel.add_font_override("font", cancel_font)
 			
 	var red_normal = StyleBoxFlat.new()
 	red_normal.bg_color = Color(0.8, 0.25, 0.3)
@@ -2641,6 +3230,8 @@ func _create_claim_profile_panel():
 	red_normal.shadow_color = Color(0.85, 0.3, 0.35, 0.15)
 	red_normal.shadow_size = 6
 	red_normal.shadow_offset = Vector2(0, 2)
+	red_normal.content_margin_left = 30
+	red_normal.content_margin_right = 30
 	
 	var red_hover = StyleBoxFlat.new()
 	red_hover.bg_color = Color(0.85, 0.3, 0.35)
@@ -2654,6 +3245,8 @@ func _create_claim_profile_panel():
 	red_hover.shadow_color = Color(0.85, 0.3, 0.35, 0.2)
 	red_hover.shadow_size = 8
 	red_hover.shadow_offset = Vector2(0, 3)
+	red_hover.content_margin_left = 30
+	red_hover.content_margin_right = 30
 
 	var red_pressed = StyleBoxFlat.new()
 	red_pressed.bg_color = Color(0.7, 0.2, 0.25)
@@ -2668,6 +3261,8 @@ func _create_claim_profile_panel():
 	red_pressed.shadow_color = Color(0, 0, 0, 0.15)
 	red_pressed.shadow_size = 2
 	red_pressed.shadow_offset = Vector2(0, 1)
+	red_pressed.content_margin_left = 30
+	red_pressed.content_margin_right = 30
 
 	btn_cancel.add_stylebox_override("normal", red_normal)
 	btn_cancel.add_stylebox_override("hover", red_hover)
@@ -2676,6 +3271,18 @@ func _create_claim_profile_panel():
 	btn_cancel.add_color_override("font_color_hover", Color(1, 1, 1))
 	btn_cancel.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
 	claim_profile_panel.add_child(btn_cancel)
+	
+	# Platform specific visibility and positioning
+	if OS.has_feature("JavaScript") or OS.get_name() == "HTML5" or OS.get_name() == "Android":
+		btn_google_claim.visible = false
+		btn_cancel.margin_top = 900
+		btn_cancel.margin_bottom = 1000
+	else:
+		btn_google_claim.visible = true
+		btn_google_claim.margin_top = 880
+		btn_google_claim.margin_bottom = 980
+		btn_cancel.margin_top = 1020
+		btn_cancel.margin_bottom = 1120
 	
 	$UI/Control.add_child(claim_profile_panel)
 	
@@ -2696,26 +3303,41 @@ func _create_conflict_panel():
 	title.align = Label.ALIGN_CENTER
 	title.anchor_right = 1.0
 	title.margin_top = 80
-	title.margin_bottom = 140
+	title.margin_bottom = 170
 	var title_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if title_font:
-		title_font.size = 56
+		title_font.size = 65
+		title_font.outline_size = 4
+		title_font.outline_color = Color(0.08, 0.1, 0.15)
 		title.add_font_override("font", title_font)
 	title.add_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing gold/yellow title
 	conflict_panel.add_child(title)
+	
+	# Divider
+	var divider = Panel.new()
+	divider.anchor_left = 0.1
+	divider.anchor_right = 0.9
+	divider.margin_top = 190
+	divider.margin_bottom = 193
+	var div_style = StyleBoxFlat.new()
+	div_style.bg_color = Color(0.25, 0.3, 0.45, 0.7)
+	divider.add_stylebox_override("panel", div_style)
+	conflict_panel.add_child(divider)
 	
 	# Subtitle
 	var subtitle = Label.new()
 	subtitle.text = "An existing save file was found for this email.\nChoose which profile you want to keep:"
 	subtitle.align = Label.ALIGN_CENTER
 	subtitle.anchor_right = 1.0
-	subtitle.margin_top = 150
-	subtitle.margin_bottom = 230
+	subtitle.margin_top = 215
+	subtitle.margin_bottom = 335
 	var sub_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if sub_font:
-		sub_font.size = 32
+		sub_font.size = 50
+		sub_font.outline_size = 3
+		sub_font.outline_color = Color(0.08, 0.1, 0.15)
 		subtitle.add_font_override("font", sub_font)
-	subtitle.add_color_override("font_color", Color(0.8, 0.8, 0.9))
+	subtitle.add_color_override("font_color", Color(0.85, 0.85, 0.95))
 	conflict_panel.add_child(subtitle)
 	
 	# Button Group for mutual exclusion
@@ -2726,10 +3348,10 @@ func _create_conflict_panel():
 	cards_vbox.name = "CardsVBox"
 	cards_vbox.anchor_left = 0.5
 	cards_vbox.anchor_right = 0.5
-	cards_vbox.margin_left = -320
-	cards_vbox.margin_right = 320
-	cards_vbox.margin_top = 250
-	cards_vbox.margin_bottom = 770
+	cards_vbox.margin_left = -450
+	cards_vbox.margin_right = 450
+	cards_vbox.margin_top = 355
+	cards_vbox.margin_bottom = 1375
 	cards_vbox.alignment = BoxContainer.ALIGN_CENTER
 	cards_vbox.set("custom_constants/separation", 20)
 	conflict_panel.add_child(cards_vbox)
@@ -2761,17 +3383,21 @@ func _create_conflict_panel():
 	
 	var label_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if label_font:
-		label_font.size = 28
+		label_font.size = 44
+		label_font.outline_size = 2
+		label_font.outline_color = Color(0.08, 0.1, 0.15)
 		
 	var bold_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if bold_font:
-		bold_font.size = 32
+		bold_font.size = 45
+		bold_font.outline_size = 3
+		bold_font.outline_color = Color(0.08, 0.1, 0.15)
 		
 	# Card 1: Device
 	card_device = Button.new()
 	card_device.toggle_mode = true
 	card_device.group = btn_group
-	card_device.rect_min_size = Vector2(640, 240)
+	card_device.rect_min_size = Vector2(900, 460)
 	card_device.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_device.add_stylebox_override("normal", card_normal)
 	card_device.add_stylebox_override("hover", card_hover)
@@ -2782,13 +3408,13 @@ func _create_conflict_panel():
 	var vbox_dev = VBoxContainer.new()
 	vbox_dev.anchor_right = 1.0
 	vbox_dev.anchor_bottom = 1.0
-	vbox_dev.margin_left = 25
-	vbox_dev.margin_right = -25
+	vbox_dev.margin_left = 30
+	vbox_dev.margin_right = -30
 	vbox_dev.margin_top = 25
 	vbox_dev.margin_bottom = -25
 	vbox_dev.mouse_filter = Control.MOUSE_FILTER_PASS
 	vbox_dev.alignment = BoxContainer.ALIGN_CENTER
-	vbox_dev.set("custom_constants/separation", 10)
+	vbox_dev.set("custom_constants/separation", 15)
 	card_device.add_child(vbox_dev)
 	
 	var header_dev = Label.new()
@@ -2798,6 +3424,13 @@ func _create_conflict_panel():
 	if bold_font: header_dev.add_font_override("font", bold_font)
 	header_dev.add_color_override("font_color", Color(0.4, 0.8, 1.0))
 	vbox_dev.add_child(header_dev)
+	
+	lbl_device_name = Label.new()
+	lbl_device_name.align = Label.ALIGN_CENTER
+	lbl_device_name.mouse_filter = Control.MOUSE_FILTER_PASS
+	if label_font: lbl_device_name.add_font_override("font", label_font)
+	lbl_device_name.add_color_override("font_color", Color(1.0, 1.0, 1.0))
+	vbox_dev.add_child(lbl_device_name)
 	
 	lbl_device_classic = Label.new()
 	lbl_device_classic.align = Label.ALIGN_CENTER
@@ -2837,7 +3470,7 @@ func _create_conflict_panel():
 	card_cloud = Button.new()
 	card_cloud.toggle_mode = true
 	card_cloud.group = btn_group
-	card_cloud.rect_min_size = Vector2(640, 240)
+	card_cloud.rect_min_size = Vector2(900, 460)
 	card_cloud.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_cloud.add_stylebox_override("normal", card_normal)
 	card_cloud.add_stylebox_override("hover", card_hover)
@@ -2848,13 +3481,13 @@ func _create_conflict_panel():
 	var vbox_cld = VBoxContainer.new()
 	vbox_cld.anchor_right = 1.0
 	vbox_cld.anchor_bottom = 1.0
-	vbox_cld.margin_left = 25
-	vbox_cld.margin_right = -25
+	vbox_cld.margin_left = 30
+	vbox_cld.margin_right = -30
 	vbox_cld.margin_top = 25
 	vbox_cld.margin_bottom = -25
 	vbox_cld.mouse_filter = Control.MOUSE_FILTER_PASS
 	vbox_cld.alignment = BoxContainer.ALIGN_CENTER
-	vbox_cld.set("custom_constants/separation", 10)
+	vbox_cld.set("custom_constants/separation", 15)
 	card_cloud.add_child(vbox_cld)
 	
 	var header_cld = Label.new()
@@ -2864,6 +3497,13 @@ func _create_conflict_panel():
 	if bold_font: header_cld.add_font_override("font", bold_font)
 	header_cld.add_color_override("font_color", Color(0.5, 0.9, 0.6))
 	vbox_cld.add_child(header_cld)
+	
+	lbl_cloud_name = Label.new()
+	lbl_cloud_name.align = Label.ALIGN_CENTER
+	lbl_cloud_name.mouse_filter = Control.MOUSE_FILTER_PASS
+	if label_font: lbl_cloud_name.add_font_override("font", label_font)
+	lbl_cloud_name.add_color_override("font_color", Color(1.0, 1.0, 1.0))
+	vbox_cld.add_child(lbl_cloud_name)
 	
 	lbl_cloud_classic = Label.new()
 	lbl_cloud_classic.align = Label.ALIGN_CENTER
@@ -2904,22 +3544,26 @@ func _create_conflict_panel():
 	warn_lbl.text = "⚠️ Selecting a profile will permanently overwrite the unselected one."
 	warn_lbl.align = Label.ALIGN_CENTER
 	warn_lbl.anchor_right = 1.0
-	warn_lbl.margin_top = 790
-	warn_lbl.margin_bottom = 840
+	warn_lbl.margin_top = 1395
+	warn_lbl.margin_bottom = 1460
 	var warn_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if warn_font:
-		warn_font.size = 26
+		warn_font.size = 40
+		warn_font.outline_size = 2
+		warn_font.outline_color = Color(0.08, 0.1, 0.15)
 		warn_lbl.add_font_override("font", warn_font)
-	warn_lbl.add_color_override("font_color", Color(0.9, 0.6, 0.2))
+	warn_lbl.add_color_override("font_color", Color(1.0, 0.6, 0.15))
 	conflict_panel.add_child(warn_lbl)
 	
 	# Keep Selected Save Button
 	btn_keep_selected = Button.new()
 	btn_keep_selected.text = "Keep Selected Save"
-	btn_keep_selected.anchor_left = 0.15
-	btn_keep_selected.anchor_right = 0.85
-	btn_keep_selected.margin_top = 855
-	btn_keep_selected.margin_bottom = 935
+	btn_keep_selected.anchor_left = 0.5
+	btn_keep_selected.anchor_right = 0.5
+	btn_keep_selected.margin_left = -450
+	btn_keep_selected.margin_right = 450
+	btn_keep_selected.margin_top = 1480
+	btn_keep_selected.margin_bottom = 1580
 	btn_keep_selected.connect("pressed", self, "_on_KeepSelected_pressed")
 	btn_keep_selected.disabled = true
 	btn_keep_selected.modulate.a = 0.5
@@ -2928,7 +3572,9 @@ func _create_conflict_panel():
 	var ref_font = ref_btn.get_font("font") if ref_btn else null
 	if ref_font:
 		var green_font = ref_font.duplicate()
-		green_font.outline_color = Color(0.2, 0.5, 0.1)
+		green_font.size = 45
+		green_font.outline_size = 3
+		green_font.outline_color = Color(0.15, 0.4, 0.08)
 		btn_keep_selected.add_font_override("font", green_font)
 		
 	var green_normal = StyleBoxFlat.new()
@@ -2940,6 +3586,8 @@ func _create_conflict_panel():
 	green_normal.corner_radius_bottom_left = 20
 	green_normal.border_width_bottom = 8
 	green_normal.border_color = Color(0.3, 0.6, 0.15)
+	green_normal.content_margin_left = 30
+	green_normal.content_margin_right = 30
 	
 	var green_hover = green_normal.duplicate()
 	green_hover.bg_color = Color(0.45, 0.85, 0.25)
@@ -2962,13 +3610,19 @@ func _create_conflict_panel():
 	# Cancel Button
 	var btn_cancel = Button.new()
 	btn_cancel.text = "Cancel Linking"
-	btn_cancel.anchor_left = 0.15
-	btn_cancel.anchor_right = 0.85
-	btn_cancel.margin_top = 955
-	btn_cancel.margin_bottom = 1035
+	btn_cancel.anchor_left = 0.5
+	btn_cancel.anchor_right = 0.5
+	btn_cancel.margin_left = -450
+	btn_cancel.margin_right = 450
+	btn_cancel.margin_top = 1600
+	btn_cancel.margin_bottom = 1700
 	btn_cancel.connect("pressed", self, "_on_ConflictCancel_pressed")
 	if ref_font:
-		btn_cancel.add_font_override("font", ref_font)
+		var cancel_font = ref_font.duplicate()
+		cancel_font.size = 45
+		cancel_font.outline_size = 3
+		cancel_font.outline_color = Color(0.4, 0.1, 0.1)
+		btn_cancel.add_font_override("font", cancel_font)
 		
 	var red_normal = StyleBoxFlat.new()
 	red_normal.bg_color = Color(0.8, 0.25, 0.3)
@@ -2979,17 +3633,40 @@ func _create_conflict_panel():
 	red_normal.corner_radius_bottom_left = 20
 	red_normal.border_width_bottom = 8
 	red_normal.border_color = Color(0.65, 0.2, 0.2)
+	red_normal.content_margin_left = 30
+	red_normal.content_margin_right = 30
 	
-	var red_hover = red_normal.duplicate()
+	var red_hover = StyleBoxFlat.new()
 	red_hover.bg_color = Color(0.85, 0.3, 0.35)
+	red_hover.anti_aliasing = true
+	red_hover.corner_radius_top_left = 20
+	red_hover.corner_radius_top_right = 20
+	red_hover.corner_radius_bottom_right = 20
+	red_hover.corner_radius_bottom_left = 20
+	red_hover.border_width_bottom = 8
 	red_hover.border_color = Color(0.7, 0.25, 0.25)
-	
-	var red_pressed = red_normal.duplicate()
+	red_hover.shadow_color = Color(0.85, 0.3, 0.35, 0.2)
+	red_hover.shadow_size = 8
+	red_hover.shadow_offset = Vector2(0, 3)
+	red_hover.content_margin_left = 30
+	red_hover.content_margin_right = 30
+
+	var red_pressed = StyleBoxFlat.new()
 	red_pressed.bg_color = Color(0.7, 0.2, 0.25)
+	red_pressed.anti_aliasing = true
+	red_pressed.corner_radius_top_left = 20
+	red_pressed.corner_radius_top_right = 20
+	red_pressed.corner_radius_bottom_right = 20
+	red_pressed.corner_radius_bottom_left = 20
 	red_pressed.border_width_top = 4
 	red_pressed.border_width_bottom = 4
 	red_pressed.border_color = Color(0.55, 0.15, 0.18)
-	
+	red_pressed.shadow_color = Color(0, 0, 0, 0.15)
+	red_pressed.shadow_size = 2
+	red_pressed.shadow_offset = Vector2(0, 1)
+	red_pressed.content_margin_left = 30
+	red_pressed.content_margin_right = 30
+
 	btn_cancel.add_stylebox_override("normal", red_normal)
 	btn_cancel.add_stylebox_override("hover", red_hover)
 	btn_cancel.add_stylebox_override("pressed", red_pressed)
@@ -3021,14 +3698,17 @@ func _on_SubmitClaim_pressed():
 	var password = claim_pass_input.text.strip_edges()
 	if email == "" or password == "":
 		return
-	FirebaseManager.start_profile_claim_email(email, password, stats, hiscores, highest_levels, Global.player_name)
+	FirebaseManager.start_profile_claim_email(email, password, player_data)
 	claim_profile_panel.visible = false
+	_show_loading("Linking Account...")
 
 func _on_GoogleClaim_pressed():
-	FirebaseManager.start_google_login(stats, hiscores, highest_levels, Global.player_name)
+	FirebaseManager.start_google_login(player_data)
 	claim_profile_panel.visible = false
+	_show_loading("Linking Account...")
 
 func _on_profile_claim_conflict(_guest_stats, _cloud_stats):
+	_hide_loading()
 	# 1. Reset selection states
 	selected_profile_type = ""
 	if card_device:
@@ -3040,9 +3720,11 @@ func _on_profile_claim_conflict(_guest_stats, _cloud_stats):
 		btn_keep_selected.modulate.a = 0.5
 		
 	# 2. Format Device Stats
-	var dev_classic = int(FirebaseManager.cached_guest_hiscores.get(0, 0))
-	var dev_escalation = int(FirebaseManager.cached_guest_hiscores.get(1, 0))
-	var dev_level = int(FirebaseManager.cached_guest_highest_levels.get(1, 1))
+	var dev_name = str(FirebaseManager.cached_guest_stats.get("player_name", ""))
+	if dev_name == "": dev_name = "Guest"
+	var dev_classic = int(FirebaseManager.cached_guest_stats.get("classic_highscore", 0))
+	var dev_escalation = int(FirebaseManager.cached_guest_stats.get("escalation_highscore", 0))
+	var dev_level = int(FirebaseManager.cached_guest_stats.get("escalation_highest_level", 1))
 	var dev_games = int(FirebaseManager.cached_guest_stats.get("total_games", 0))
 	var dev_playtime_sec = float(FirebaseManager.cached_guest_stats.get("playtime", 0.0))
 	
@@ -3054,6 +3736,8 @@ func _on_profile_claim_conflict(_guest_stats, _cloud_stats):
 	else:
 		dev_playtime_str = str(dev_mins) + "m"
 		
+	if lbl_device_name:
+		lbl_device_name.text = "Name: " + dev_name
 	if lbl_device_classic:
 		lbl_device_classic.text = "Classic High Score: " + str(dev_classic)
 	if lbl_device_escalation:
@@ -3064,6 +3748,8 @@ func _on_profile_claim_conflict(_guest_stats, _cloud_stats):
 		lbl_device_playtime.text = "Playtime: " + dev_playtime_str
 		
 	# 3. Format Cloud Stats
+	var cld_name = str(FirebaseManager.cached_cloud_stats.get("player_name", ""))
+	if cld_name == "": cld_name = "Cloud Player"
 	var cld_classic = int(FirebaseManager.cached_cloud_stats.get("classic_highscore", 0))
 	var cld_escalation = int(FirebaseManager.cached_cloud_stats.get("escalation_highscore", 0))
 	var cld_level = int(FirebaseManager.cached_cloud_stats.get("escalation_highest_level", 1))
@@ -3078,6 +3764,8 @@ func _on_profile_claim_conflict(_guest_stats, _cloud_stats):
 	else:
 		cld_playtime_str = str(cld_mins) + "m"
 		
+	if lbl_cloud_name:
+		lbl_cloud_name.text = "Name: " + cld_name
 	if lbl_cloud_classic:
 		lbl_cloud_classic.text = "Classic High Score: " + str(cld_classic)
 	if lbl_cloud_escalation:
@@ -3094,30 +3782,41 @@ func _on_ConflictCancel_pressed():
 		ui_button_click.play()
 	conflict_panel.visible = false
 	FirebaseManager.resolve_conflict_cancel()
+	
+	# Clean up UI - close panels and return to main screen
+	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
+	if profile_panel_node:
+		profile_panel_node.hide()
+	active_panel_name = ""
+	_show_active_screen()
 
 func _on_profile_claim_succeeded(cloud_stats = {}):
+	_hide_loading()
 	if typeof(cloud_stats) == TYPE_DICTIONARY and not cloud_stats.empty():
-		hiscores[0] = int(cloud_stats.get("classic_highscore", 0))
-		hiscores[1] = int(cloud_stats.get("escalation_highscore", 0))
-		highest_levels[0] = 1
-		highest_levels[1] = int(cloud_stats.get("escalation_highest_level", 1))
-		stats["total_games"] = int(cloud_stats.get("total_games", 0))
-		stats["high_score"] = hiscores[mode_level]
-		stats["playtime"] = float(cloud_stats.get("playtime", 0.0))
-		stats["total_deaths"] = int(cloud_stats.get("total_deaths", 0))
-		stats["total_revives"] = int(cloud_stats.get("total_revives", 0))
-		stats["total_distance"] = float(cloud_stats.get("total_distance", 0.0))
+		set_highscore(0, int(cloud_stats.get("classic_highscore", 0)))
+		set_highscore(1, int(cloud_stats.get("escalation_highscore", 0)))
+		set_highest_level(0, 1)
+		set_highest_level(1, int(cloud_stats.get("escalation_highest_level", 1)))
+		player_data["total_games"] = int(cloud_stats.get("total_games", 0))
+		
+		player_data["playtime"] = float(cloud_stats.get("playtime", 0.0))
+		player_data["total_deaths"] = int(cloud_stats.get("total_deaths", 0))
+		player_data["total_revives"] = int(cloud_stats.get("total_revives", 0))
+		player_data["total_distance"] = float(cloud_stats.get("total_distance", 0.0))
+		player_data["has_changed_name_logged_in"] = bool(cloud_stats.get("has_changed_name_logged_in", false))
 		
 		var c_name = cloud_stats.get("player_name", "")
 		if c_name != "":
 			Global.player_name = c_name
 			Global.has_changed_name = true
 			
-		save_hiscore()
+		save_hiscore(false)
 		update_score_display()
 	else:
-		save_hiscore()
+		save_hiscore(false)
 		update_score_display()
+
+	FirebaseManager.fetch_leaderboards(true)
 
 	if active_panel_name == "profile":
 		active_panel_name = ""
@@ -3126,10 +3825,68 @@ func _on_profile_claim_succeeded(cloud_stats = {}):
 	print("Profile Claim Succeeded!")
 
 func _on_profile_claim_failed(reason):
+	_hide_loading()
 	print("Profile Claim Failed: ", reason)
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node:
 		profile_panel_node.show()
+
+func _update_manage_account_name_ui():
+	if not is_instance_valid(name_input):
+		return
+		
+	var is_registered = FirebaseManager.get_is_registered()
+	if not is_registered:
+		name_input.editable = false
+		name_input.anchor_right = 0.85
+		name_input.margin_right = 0
+		name_input.align = LineEdit.ALIGN_CENTER
+		if is_instance_valid(name_submit_btn):
+			name_submit_btn.visible = false
+			name_submit_btn.disabled = true
+		if is_instance_valid(name_cancel_btn):
+			name_cancel_btn.visible = false
+		if is_instance_valid(manage_name_hint):
+			manage_name_hint.visible = false
+	else:
+		var has_changed = bool(player_data.get("has_changed_name_logged_in", false))
+		if has_changed:
+			name_input.editable = false
+			name_input.anchor_right = 0.85
+			name_input.margin_right = 0
+			name_input.align = LineEdit.ALIGN_CENTER
+			if is_instance_valid(name_submit_btn):
+				name_submit_btn.visible = false
+				name_submit_btn.disabled = true
+			if is_instance_valid(name_cancel_btn):
+				name_cancel_btn.visible = false
+			if is_instance_valid(manage_name_hint):
+				manage_name_hint.visible = false
+		else:
+			name_input.anchor_right = 0.6
+			name_input.margin_right = 0
+			name_input.editable = is_editing_name
+			name_input.align = LineEdit.ALIGN_LEFT if is_editing_name else LineEdit.ALIGN_CENTER
+			
+			if is_instance_valid(name_submit_btn):
+				name_submit_btn.visible = true
+				name_submit_btn.disabled = false
+				if is_editing_name:
+					name_submit_btn.text = "Set"
+				else:
+					name_submit_btn.text = "Edit"
+			if is_instance_valid(name_cancel_btn):
+				name_cancel_btn.visible = is_editing_name
+			if is_instance_valid(manage_name_hint):
+				manage_name_hint.visible = true
+				manage_name_hint.text = "You can change your player name once."
+				manage_name_hint.add_color_override("font_color", Color(0.7, 0.7, 0.8))
+
+	# Re-assigning text AFTER changing alignment forces Godot to recalculate character click bounds!
+	if not is_editing_name:
+		name_input.text = Global.player_name
+	else:
+		name_input.text = name_input.text
 
 func _create_manage_account_panel():
 	manage_account_panel = Panel.new()
@@ -3146,37 +3903,223 @@ func _create_manage_account_panel():
 	title.text = "Manage Account"
 	title.align = Label.ALIGN_CENTER
 	title.anchor_right = 1.0
-	title.margin_top = 120
-	title.margin_bottom = 220
-	var title_font = load("res://resources/Theme.tres").get_font("font", "Button")
-	if title_font: title.add_font_override("font", title_font)
+	title.margin_top = 230
+	title.margin_bottom = 330
+	var title_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if title_font:
+		title_font.size = 65
+		title_font.outline_size = 4
+		title_font.outline_color = Color(0.08, 0.1, 0.15)
+		title.add_font_override("font", title_font)
 	manage_account_panel.add_child(title)
+	
+	# Divider
+	var divider = Panel.new()
+	divider.anchor_left = 0.1
+	divider.anchor_right = 0.9
+	divider.margin_top = 350
+	divider.margin_bottom = 353
+	var div_style = StyleBoxFlat.new()
+	div_style.bg_color = Color(0.25, 0.3, 0.45, 0.7)
+	divider.add_stylebox_override("panel", div_style)
+	manage_account_panel.add_child(divider)
 	
 	var ref_btn = $UI/Control/SettingsPanel/CloseSettings
 	var ref_font = null
 	if ref_btn:
 		ref_font = ref_btn.get_font("font")
 		
+	# Player Name Label
+	var name_label = Label.new()
+	name_label.text = "Player Name"
+	name_label.align = Label.ALIGN_CENTER
+	name_label.anchor_left = 0.15
+	name_label.anchor_right = 0.85
+	name_label.margin_top = 420
+	name_label.margin_bottom = 490
+	if ref_font:
+		var name_label_font = ref_font.duplicate()
+		name_label_font.size = 50
+		name_label_font.outline_size = 3
+		name_label_font.outline_color = Color(0.08, 0.1, 0.15)
+		name_label.add_font_override("font", name_label_font)
+	manage_account_panel.add_child(name_label)
+	
+	# Player Name Input
+	var input_font = DynamicFont.new()
+	input_font.font_data = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	input_font.size = 50
+	input_font.outline_size = 2
+	input_font.outline_color = Color(0.1, 0.1, 0.1, 0.8)
+	
+	var line_edit_style = StyleBoxFlat.new()
+	line_edit_style.bg_color = Color(0.1, 0.1, 0.15, 0.9) # Dark blue/grey input box
+	line_edit_style.border_width_left = 3
+	line_edit_style.border_width_top = 3
+	line_edit_style.border_width_right = 3
+	line_edit_style.border_width_bottom = 3
+	line_edit_style.border_color = Color(0.2, 0.2, 0.3)
+	line_edit_style.corner_radius_top_left = 20
+	line_edit_style.corner_radius_top_right = 20
+	line_edit_style.corner_radius_bottom_right = 20
+	line_edit_style.corner_radius_bottom_left = 20
+	line_edit_style.content_margin_left = 30
+	line_edit_style.content_margin_right = 30
+	
+	var line_edit_focus = line_edit_style.duplicate()
+	line_edit_focus.border_color = Color(0.4, 0.8, 0.2) # Active green border on focus
+
+	name_input = LineEdit.new()
+	name_input.max_length = 20
+	name_input.placeholder_text = "Enter name..."
+	name_input.anchor_left = 0.15
+	name_input.anchor_right = 0.85
+	name_input.margin_right = 0
+	name_input.margin_top = 510
+	name_input.margin_bottom = 610
+	name_input.add_font_override("font", input_font)
+	name_input.add_stylebox_override("normal", line_edit_style)
+	name_input.add_stylebox_override("focus", line_edit_focus)
+	name_input.add_color_override("font_color", Color(1, 1, 1))
+	name_input.add_color_override("cursor_color", Color(1, 1, 1))
+	name_input.add_color_override("placeholder_color", Color(0.6, 0.6, 0.7))
+	name_input.caret_blink = true
+	name_input.caret_blink_speed = 0.65
+	name_input.add_constant_override("caret_width", 3)
+	name_input.connect("text_changed", self, "_on_name_input_changed")
+	name_input.connect("text_entered", self, "_on_name_input_entered")
+	name_input.connect("focus_exited", self, "_on_name_input_focus_exited")
+	manage_account_panel.add_child(name_input)
+	
+	# Player Name Submit Button
+	name_submit_btn = Button.new()
+	name_submit_btn.text = "Set"
+	name_submit_btn.anchor_left = 0.65
+	name_submit_btn.anchor_right = 0.85
+	name_submit_btn.margin_top = 510
+	name_submit_btn.margin_bottom = 610
+	if ref_font:
+		var name_submit_font = ref_font.duplicate()
+		name_submit_font.size = 45
+		name_submit_font.outline_size = 3
+		name_submit_font.outline_color = Color(0.08, 0.1, 0.15)
+		name_submit_btn.add_font_override("font", name_submit_font)
+		
+	var set_normal = StyleBoxFlat.new()
+	set_normal.bg_color = Color(0.15, 0.4, 0.75) # Premium blue
+	set_normal.corner_radius_top_left = 20
+	set_normal.corner_radius_top_right = 20
+	set_normal.corner_radius_bottom_right = 20
+	set_normal.corner_radius_bottom_left = 20
+	set_normal.border_width_bottom = 6
+	set_normal.border_color = Color(0.1, 0.3, 0.6)
+	
+	var set_hover = set_normal.duplicate()
+	set_hover.bg_color = Color(0.2, 0.48, 0.85)
+	set_hover.border_color = Color(0.12, 0.35, 0.65)
+	
+	var set_pressed = set_normal.duplicate()
+	set_pressed.bg_color = Color(0.1, 0.3, 0.6)
+	set_pressed.border_width_bottom = 2
+	set_pressed.border_width_top = 4
+	
+	name_submit_btn.add_stylebox_override("normal", set_normal)
+	name_submit_btn.add_stylebox_override("hover", set_hover)
+	name_submit_btn.add_stylebox_override("pressed", set_pressed)
+	name_submit_btn.add_color_override("font_color", Color(1, 1, 1))
+	name_submit_btn.add_color_override("font_color_hover", Color(1, 1, 1))
+	name_submit_btn.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
+	name_submit_btn.connect("pressed", self, "_on_name_submit_pressed")
+	manage_account_panel.add_child(name_submit_btn)
+	
+	# Player Name Cancel Button
+	name_cancel_btn = Button.new()
+	name_cancel_btn.text = "Cancel"
+	name_cancel_btn.anchor_left = 0.65
+	name_cancel_btn.anchor_right = 0.85
+	name_cancel_btn.margin_top = 630
+	name_cancel_btn.margin_bottom = 710
+	name_cancel_btn.visible = false
+	if ref_font:
+		var name_cancel_font = ref_font.duplicate()
+		name_cancel_font.size = 45
+		name_cancel_font.outline_size = 3
+		name_cancel_font.outline_color = Color(0.08, 0.1, 0.15)
+		name_cancel_btn.add_font_override("font", name_cancel_font)
+		
+	var cancel_normal = StyleBoxFlat.new()
+	cancel_normal.bg_color = Color(0.55, 0.2, 0.2)
+	cancel_normal.corner_radius_top_left = 20
+	cancel_normal.corner_radius_top_right = 20
+	cancel_normal.corner_radius_bottom_right = 20
+	cancel_normal.corner_radius_bottom_left = 20
+	cancel_normal.border_width_bottom = 6
+	cancel_normal.border_color = Color(0.4, 0.15, 0.15)
+	
+	var cancel_hover = cancel_normal.duplicate()
+	cancel_hover.bg_color = Color(0.65, 0.25, 0.25)
+	cancel_hover.border_color = Color(0.48, 0.18, 0.18)
+	
+	var cancel_pressed = cancel_normal.duplicate()
+	cancel_pressed.bg_color = Color(0.4, 0.15, 0.15)
+	cancel_pressed.border_width_bottom = 2
+	cancel_pressed.border_width_top = 4
+	
+	name_cancel_btn.add_stylebox_override("normal", cancel_normal)
+	name_cancel_btn.add_stylebox_override("hover", cancel_hover)
+	name_cancel_btn.add_stylebox_override("pressed", cancel_pressed)
+	name_cancel_btn.add_color_override("font_color", Color(1, 1, 1))
+	name_cancel_btn.add_color_override("font_color_hover", Color(1, 1, 1))
+	name_cancel_btn.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
+	name_cancel_btn.connect("pressed", self, "_on_name_cancel_pressed")
+	manage_account_panel.add_child(name_cancel_btn)
+	
+	# Player Name Hint Label
+	manage_name_hint = Label.new()
+	manage_name_hint.align = Label.ALIGN_LEFT
+	manage_name_hint.anchor_left = 0.15
+	manage_name_hint.anchor_right = 0.6
+	manage_name_hint.margin_right = 0
+	manage_name_hint.margin_top = 630
+	manage_name_hint.margin_bottom = 685
+	if ref_font:
+		var hint_font = ref_font.duplicate()
+		hint_font.size = 30
+		manage_name_hint.add_font_override("font", hint_font)
+	manage_account_panel.add_child(manage_name_hint)
+		
 	var btn_unlink = Button.new()
 	btn_unlink.text = "Unlink Account"
-	btn_unlink.anchor_left = 0.15
-	btn_unlink.anchor_right = 0.85
-	btn_unlink.margin_top = 300
-	btn_unlink.margin_bottom = 380
+	btn_unlink.anchor_left = 0.5
+	btn_unlink.anchor_right = 0.5
+	btn_unlink.margin_left = -450
+	btn_unlink.margin_right = 450
+	btn_unlink.margin_top = 730
+	btn_unlink.margin_bottom = 830
 	btn_unlink.disabled = true
 	if ref_font:
-		btn_unlink.add_font_override("font", ref_font)
+		var unlink_font = ref_font.duplicate()
+		unlink_font.size = 45
+		unlink_font.outline_size = 3
+		unlink_font.outline_color = Color(0.2, 0.2, 0.25)
+		btn_unlink.add_font_override("font", unlink_font)
 	manage_account_panel.add_child(btn_unlink)
 	
 	var btn_logout = Button.new()
 	btn_logout.text = "Logout"
-	btn_logout.anchor_left = 0.15
-	btn_logout.anchor_right = 0.85
-	btn_logout.margin_top = 430
-	btn_logout.margin_bottom = 510
+	btn_logout.anchor_left = 0.5
+	btn_logout.anchor_right = 0.5
+	btn_logout.margin_left = -450
+	btn_logout.margin_right = 450
+	btn_logout.margin_top = 870
+	btn_logout.margin_bottom = 970
 	btn_logout.connect("pressed", self, "_on_Logout_pressed")
 	if ref_font:
-		btn_logout.add_font_override("font", ref_font)
+		var logout_font = ref_font.duplicate()
+		logout_font.size = 45
+		logout_font.outline_size = 3
+		logout_font.outline_color = Color(0.4, 0.1, 0.1)
+		btn_logout.add_font_override("font", logout_font)
 		
 	var red_normal = StyleBoxFlat.new()
 	red_normal.bg_color = Color(0.8, 0.25, 0.3)
@@ -3190,6 +4133,8 @@ func _create_manage_account_panel():
 	red_normal.shadow_color = Color(0.85, 0.3, 0.35, 0.15)
 	red_normal.shadow_size = 6
 	red_normal.shadow_offset = Vector2(0, 2)
+	red_normal.content_margin_left = 30
+	red_normal.content_margin_right = 30
 	
 	var red_hover = StyleBoxFlat.new()
 	red_hover.bg_color = Color(0.85, 0.3, 0.35)
@@ -3203,7 +4148,9 @@ func _create_manage_account_panel():
 	red_hover.shadow_color = Color(0.85, 0.3, 0.35, 0.2)
 	red_hover.shadow_size = 8
 	red_hover.shadow_offset = Vector2(0, 3)
-
+	red_hover.content_margin_left = 30
+	red_hover.content_margin_right = 30
+ 
 	var red_pressed = StyleBoxFlat.new()
 	red_pressed.bg_color = Color(0.7, 0.2, 0.25)
 	red_pressed.anti_aliasing = true
@@ -3217,7 +4164,9 @@ func _create_manage_account_panel():
 	red_pressed.shadow_color = Color(0, 0, 0, 0.15)
 	red_pressed.shadow_size = 2
 	red_pressed.shadow_offset = Vector2(0, 1)
-
+	red_pressed.content_margin_left = 30
+	red_pressed.content_margin_right = 30
+ 
 	btn_logout.add_stylebox_override("normal", red_normal)
 	btn_logout.add_stylebox_override("hover", red_hover)
 	btn_logout.add_stylebox_override("pressed", red_pressed)
@@ -3227,18 +4176,48 @@ func _create_manage_account_panel():
 	manage_account_panel.add_child(btn_logout)
 	
 	var btn_cancel = Button.new()
-	btn_cancel.text = "Cancel"
-	btn_cancel.anchor_left = 0.15
-	btn_cancel.anchor_right = 0.85
-	btn_cancel.margin_top = 560
-	btn_cancel.margin_bottom = 640
+	btn_cancel.text = "Back"
+	btn_cancel.anchor_left = 0.5
+	btn_cancel.anchor_right = 0.5
+	btn_cancel.margin_left = -450
+	btn_cancel.margin_right = 450
+	btn_cancel.margin_top = 1000
+	btn_cancel.margin_bottom = 1100
 	btn_cancel.connect("pressed", self, "_on_CancelManage_pressed")
 	if ref_font:
-		btn_cancel.add_font_override("font", ref_font)
+		var cancel_font = ref_font.duplicate()
+		cancel_font.size = 45
+		cancel_font.outline_size = 3
+		cancel_font.outline_color = Color(0.1, 0.35, 0.15) # Dark green outline
+		btn_cancel.add_font_override("font", cancel_font)
 		
-	btn_cancel.add_stylebox_override("normal", red_normal)
-	btn_cancel.add_stylebox_override("hover", red_hover)
-	btn_cancel.add_stylebox_override("pressed", red_pressed)
+	var green_normal = StyleBoxFlat.new()
+	green_normal.bg_color = Color(0.4, 0.8, 0.2)
+	green_normal.anti_aliasing = true
+	green_normal.corner_radius_top_left = 20
+	green_normal.corner_radius_top_right = 20
+	green_normal.corner_radius_bottom_right = 20
+	green_normal.corner_radius_bottom_left = 20
+	green_normal.border_width_bottom = 8
+	green_normal.border_color = Color(0.3, 0.65, 0.15)
+	green_normal.shadow_color = Color(0.4, 0.8, 0.2, 0.15)
+	green_normal.shadow_size = 6
+	green_normal.shadow_offset = Vector2(0, 2)
+	green_normal.content_margin_left = 30
+	green_normal.content_margin_right = 30
+	
+	var green_hover = green_normal.duplicate()
+	green_hover.bg_color = Color(0.45, 0.85, 0.25)
+	green_hover.border_color = Color(0.32, 0.7, 0.18)
+	
+	var green_pressed = green_normal.duplicate()
+	green_pressed.bg_color = Color(0.3, 0.65, 0.15)
+	green_pressed.border_width_top = 4
+	green_pressed.border_width_bottom = 4
+		
+	btn_cancel.add_stylebox_override("normal", green_normal)
+	btn_cancel.add_stylebox_override("hover", green_hover)
+	btn_cancel.add_stylebox_override("pressed", green_pressed)
 	btn_cancel.add_color_override("font_color", Color(1, 1, 1))
 	btn_cancel.add_color_override("font_color_hover", Color(1, 1, 1))
 	btn_cancel.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
@@ -3252,12 +4231,15 @@ func _on_ManageAccount_pressed():
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node:
 		profile_panel_node.hide()
+	is_editing_name = false
+	_update_manage_account_name_ui()
 	manage_account_panel.visible = true
 
 func _on_CancelManage_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 	manage_account_panel.visible = false
+	_update_profile_panel()
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node:
 		profile_panel_node.show()
@@ -3266,16 +4248,25 @@ func _on_Logout_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 		
+	# Logout from firebase & clear credentials
+	Firebase.Auth.logout()
+	FirebaseManager.is_logged_in = false
+	FirebaseManager.user_id = ""
+		
 	# Reset local variables
-	hiscores = {0: 0, 1: 0}
-	highest_levels = {0: 1, 1: 1}
-	stats = {
+	player_data = {
+		"player_name": "",
+		"classic_highscore": 0,
+		"escalation_highscore": 0,
+		"escalation_highest_level": 1,
 		"total_games": 0,
-		"high_score": 0,
 		"playtime": 0.0,
 		"total_deaths": 0,
 		"total_revives": 0,
-		"total_distance": 0.0
+		"total_distance": 0.0,
+		"is_registered": false,
+		"last_updated": 0,
+		"has_changed_name_logged_in": false
 	}
 	Global.player_name = ""
 	Global.has_changed_name = false
@@ -3283,16 +4274,11 @@ func _on_Logout_pressed():
 	randomize()
 	Global.player_name = "Player" + str(randi() % 900000 + 100000)
 	
-	# Logout from firebase & clear credentials
-	Firebase.Auth.logout()
-	FirebaseManager.is_logged_in = false
-	FirebaseManager.user_id = ""
-	
 	var dir = Directory.new()
 	if dir.file_exists("user://user.auth"):
 		dir.remove("user://user.auth")
 		
-	save_hiscore()
+	save_hiscore(false)
 	update_score_display()
 	
 	Firebase.Auth.login_anonymous()
@@ -3319,10 +4305,10 @@ func _create_overwrite_confirm_panel():
 	card.anchor_right = 0.5
 	card.anchor_top = 0.5
 	card.anchor_bottom = 0.5
-	card.margin_left = -300
-	card.margin_right = 300
-	card.margin_top = -210
-	card.margin_bottom = 210
+	card.margin_left = -400
+	card.margin_right = 400
+	card.margin_top = -320
+	card.margin_bottom = 320
 	
 	var card_style = StyleBoxFlat.new()
 	card_style.bg_color = Color(0.08, 0.1, 0.16, 0.95) # Dark card matching settings
@@ -3344,24 +4330,39 @@ func _create_overwrite_confirm_panel():
 	title.align = Label.ALIGN_CENTER
 	title.anchor_right = 1.0
 	title.margin_top = 40
-	title.margin_bottom = 90
+	title.margin_bottom = 130
 	var title_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if title_font:
-		title_font.size = 42
+		title_font.size = 65
+		title_font.outline_size = 4
+		title_font.outline_color = Color(0.4, 0.1, 0.1) # Danger red/burgundy outline
 		title.add_font_override("font", title_font)
 	title.add_color_override("font_color", Color(0.9, 0.3, 0.3)) # Danger red
 	card.add_child(title)
+	
+	# Divider
+	var ow_divider = Panel.new()
+	ow_divider.anchor_left = 0.1
+	ow_divider.anchor_right = 0.9
+	ow_divider.margin_top = 148
+	ow_divider.margin_bottom = 151
+	var ow_div_style = StyleBoxFlat.new()
+	ow_div_style.bg_color = Color(0.5, 0.2, 0.2, 0.7)
+	ow_divider.add_stylebox_override("panel", ow_div_style)
+	card.add_child(ow_divider)
 	
 	# Msg
 	var msg = Label.new()
 	msg.text = "Permanently overwrite your profile?\nThis cannot be undone."
 	msg.align = Label.ALIGN_CENTER
 	msg.anchor_right = 1.0
-	msg.margin_top = 110
-	msg.margin_bottom = 200
+	msg.margin_top = 170
+	msg.margin_bottom = 330
 	var msg_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
 	if msg_font:
-		msg_font.size = 30
+		msg_font.size = 50
+		msg_font.outline_size = 3
+		msg_font.outline_color = Color(0.08, 0.1, 0.15) # Dark outline for white text
 		msg.add_font_override("font", msg_font)
 	msg.add_color_override("font_color", Color(0.85, 0.85, 0.9))
 	card.add_child(msg)
@@ -3374,21 +4375,27 @@ func _create_overwrite_confirm_panel():
 	btn_confirm.text = "OVERWRITE"
 	btn_confirm.anchor_left = 0.1
 	btn_confirm.anchor_right = 0.9
-	btn_confirm.margin_top = 220
-	btn_confirm.margin_bottom = 295
+	btn_confirm.margin_top = 380
+	btn_confirm.margin_bottom = 480
 	btn_confirm.connect("pressed", self, "_on_OverwriteConfirm_pressed")
 	if ref_font:
-		btn_confirm.add_font_override("font", ref_font)
+		var confirm_font = ref_font.duplicate()
+		confirm_font.size = 45
+		confirm_font.outline_size = 3
+		confirm_font.outline_color = Color(0.4, 0.1, 0.1) # Burgundy outline for Red button
+		btn_confirm.add_font_override("font", confirm_font)
 		
 	var red_normal = StyleBoxFlat.new()
 	red_normal.bg_color = Color(0.8, 0.25, 0.3)
 	red_normal.anti_aliasing = true
-	red_normal.corner_radius_top_left = 15
-	red_normal.corner_radius_top_right = 15
-	red_normal.corner_radius_bottom_right = 15
-	red_normal.corner_radius_bottom_left = 15
-	red_normal.border_width_bottom = 6
+	red_normal.corner_radius_top_left = 20
+	red_normal.corner_radius_top_right = 20
+	red_normal.corner_radius_bottom_right = 20
+	red_normal.corner_radius_bottom_left = 20
+	red_normal.border_width_bottom = 8
 	red_normal.border_color = Color(0.65, 0.2, 0.2)
+	red_normal.content_margin_left = 30
+	red_normal.content_margin_right = 30
 	
 	var red_hover = red_normal.duplicate()
 	red_hover.bg_color = Color(0.85, 0.3, 0.35)
@@ -3396,8 +4403,8 @@ func _create_overwrite_confirm_panel():
 	
 	var red_pressed = red_normal.duplicate()
 	red_pressed.bg_color = Color(0.7, 0.2, 0.25)
-	red_pressed.border_width_top = 3
-	red_pressed.border_width_bottom = 3
+	red_pressed.border_width_top = 4
+	red_pressed.border_width_bottom = 4
 	red_pressed.border_color = Color(0.55, 0.15, 0.18)
 	
 	btn_confirm.add_stylebox_override("normal", red_normal)
@@ -3413,23 +4420,27 @@ func _create_overwrite_confirm_panel():
 	btn_cancel.text = "CANCEL"
 	btn_cancel.anchor_left = 0.1
 	btn_cancel.anchor_right = 0.9
-	btn_cancel.margin_top = 310
-	btn_cancel.margin_bottom = 385
+	btn_cancel.margin_top = 500
+	btn_cancel.margin_bottom = 600
 	btn_cancel.connect("pressed", self, "_on_OverwriteCancel_pressed")
 	if ref_font:
 		var green_font = ref_font.duplicate()
-		green_font.outline_color = Color(0.2, 0.5, 0.1)
+		green_font.size = 45
+		green_font.outline_size = 3
+		green_font.outline_color = Color(0.15, 0.4, 0.08) # Green outline
 		btn_cancel.add_font_override("font", green_font)
 		
 	var green_normal = StyleBoxFlat.new()
 	green_normal.bg_color = Color(0.4, 0.8, 0.2)
 	green_normal.anti_aliasing = true
-	green_normal.corner_radius_top_left = 15
-	green_normal.corner_radius_top_right = 15
-	green_normal.corner_radius_bottom_right = 15
-	green_normal.corner_radius_bottom_left = 15
-	green_normal.border_width_bottom = 6
+	green_normal.corner_radius_top_left = 20
+	green_normal.corner_radius_top_right = 20
+	green_normal.corner_radius_bottom_right = 20
+	green_normal.corner_radius_bottom_left = 20
+	green_normal.border_width_bottom = 8
 	green_normal.border_color = Color(0.3, 0.6, 0.15)
+	green_normal.content_margin_left = 30
+	green_normal.content_margin_right = 30
 	
 	var green_hover = green_normal.duplicate()
 	green_hover.bg_color = Color(0.45, 0.85, 0.25)
@@ -3437,8 +4448,8 @@ func _create_overwrite_confirm_panel():
 	
 	var green_pressed = green_normal.duplicate()
 	green_pressed.bg_color = Color(0.35, 0.7, 0.15)
-	green_pressed.border_width_top = 3
-	green_pressed.border_width_bottom = 3
+	green_pressed.border_width_top = 4
+	green_pressed.border_width_bottom = 4
 	green_pressed.border_color = Color(0.25, 0.5, 0.1)
 	
 	btn_cancel.add_stylebox_override("normal", green_normal)
@@ -3480,6 +4491,7 @@ func _on_OverwriteConfirm_pressed():
 		ui_button_click.play()
 	overwrite_confirm_panel.visible = false
 	conflict_panel.visible = false
+	_show_loading("Overwriting Data...")
 	if selected_profile_type == "device":
 		FirebaseManager.resolve_conflict_overwrite_cloud()
 	elif selected_profile_type == "cloud":

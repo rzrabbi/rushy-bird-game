@@ -178,7 +178,7 @@ func _pooled_request(task : FirestoreTask) -> void:
 			return
 
 	var	http_request = HTTPRequest.new()
-	http_request.timeout = 5 # See if this can be set to a different value, or removed altogether.
+	http_request.timeout = 15 # See if this can be set to a different value, or removed altogether.
 	Utilities.fix_http_request(http_request)
 	add_child(http_request)
 
@@ -187,8 +187,21 @@ func _pooled_request(task : FirestoreTask) -> void:
 	http_request.request(task._url, task._headers, true, task._method, task._fields)
 
 func _on_pooled_request_completed(result : int, response_code : int, headers : PoolStringArray, body : PoolByteArray, request : HTTPRequest, task : FirestoreTask) -> void:
-	task._on_request_completed(result, response_code, headers, body)
 	request.queue_free()
+	
+	# If failed due to connection/timeout, retry up to 3 times
+	var retries = 0
+	if task.has_meta("retries"):
+		retries = task.get_meta("retries")
+		
+	if result != HTTPRequest.RESULT_SUCCESS and retries < 3:
+		task.set_meta("retries", retries + 1)
+		Firebase._printerr("Request failed with result: " + str(result) + ". Retrying (" + str(retries + 1) + "/3) in 1.5 seconds...")
+		yield(get_tree().create_timer(1.5), "timeout")
+		_pooled_request(task)
+		return
+		
+	task._on_request_completed(result, response_code, headers, body)
 
 func _on_FirebaseAuth_login_succeeded(auth_result : Dictionary) -> void:
 	auth = auth_result

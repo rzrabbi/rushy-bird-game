@@ -1,6 +1,6 @@
 extends Node
 
-var config_file_path = "res://secret_config.cfg"
+var config_file_path = "res://addons/godot-firebase/.env"
 var user_id = ""
 var is_logged_in = false
 
@@ -8,19 +8,16 @@ signal leaderboard_updated(all_time, seasonal)
 signal auth_state_changed(is_logged_in)
 signal stats_sync_finished(success, timestamp)
 
-# Profile Claim Signals
 signal profile_claim_succeeded(cloud_stats)
 signal profile_claim_failed(reason)
 signal profile_claim_conflict(guest_stats, cloud_stats)
 signal cleanup_completed
 signal migration_completed
-signal upsert_completed
 signal delete_completed
 signal score_sync_finished(success)
 
-var _last_upsert_success = false
-var _last_delete_success = false
 var last_refresh_time = 0
+var _is_fetching_leaderboards = false
 signal token_refresh_done(success)
 
 
@@ -37,30 +34,23 @@ enum AuthStates {
 }
 var current_auth_state: int = AuthStates.ANONYMOUS_SESSION
 
-# Caching for Migration
 var cached_guest_auth = {}
 var cached_guest_stats = {}
-var cached_guest_hiscores = {}
-var cached_guest_highest_levels = {}
-var cached_guest_name = ""
+
 var target_cloud_uid = ""
 var cached_cloud_stats = {}
 
-# Caching for Google link
 var _cached_link_stats = {}
-var _cached_link_hiscores = {}
-var _cached_link_highest_levels = {}
-var _cached_link_name = ""
 var js_callback = null
 
 var is_config_available = false
 
 func _ready():
 	var env = ConfigFile.new()
-	var err = env.load("res://secret_config.cfg")
+	var err = env.load(config_file_path)
 	is_config_available = (err == OK)
 	if not is_config_available:
-		printerr("[Firebase Error] >> secret_config.cfg file is missing. Leaderboard is disabled on this build.")
+		printerr("[Firebase Error] >> .env file is missing at res://addons/godot-firebase/.env. Leaderboard is disabled on this build.")
 		return
 	_setup_auth()
 	Firebase.Firestore.connect("error", self, "_on_firestore_error")
@@ -87,12 +77,16 @@ func _setup_auth():
 	Firebase.Auth.connect("login_failed", self, "_on_login_failed")
 	Firebase.Auth.connect("signup_failed", self, "_on_signup_failed")
 	
-	# Check if user is already logged in
 	var dir = Directory.new()
 	if dir.file_exists("user://user.auth"):
+		if OS.is_debug_build():
+			print("[Debug] Auth file found. Restoring session...")
 		Firebase.Auth.check_auth_file()
 	else:
-		print("No auth file found, logging in anonymously...")
+		if OS.is_debug_build():
+			print("[Debug] No auth file found. Logging in anonymously...")
+		else:
+			print("No auth file found, logging in anonymously...")
 		Firebase.Auth.login_anonymous()
 
 func _on_login_succeeded(auth_result):
@@ -136,7 +130,14 @@ func _on_login_succeeded(auth_result):
 	var was_logged_in = is_logged_in
 	is_logged_in = true
 	Firebase.Auth.save_auth(auth_result)
-	print("User Logged In: ", user_id)
+	_temp_all_time.clear()
+	_temp_seasonal.clear()
+	if OS.is_debug_build():
+		var name_str = Global.player_name if Global.player_name != "" else "Guest"
+		print("[Debug] Successfully connected and authenticated to Firebase.")
+		print("[Debug] User Logged In as: ", name_str, " (UID: ", user_id, ")")
+	else:
+		print("User Logged In: ", user_id)
 	if not was_logged_in or user_id != prev_user_id:
 		emit_signal("auth_state_changed", true)
 
@@ -168,7 +169,12 @@ func _on_token_refresh_succeeded(auth_result):
 	var was_logged_in = is_logged_in
 	is_logged_in = true
 	Firebase.Auth.save_auth(auth_result)
-	print("Token Refreshed: ", user_id)
+	if OS.is_debug_build():
+		var name_str = Global.player_name if Global.player_name != "" else "Guest"
+		print("[Debug] Connection to Firebase active and verified.")
+		print("[Debug] Token Refreshed for: ", name_str, " (UID: ", user_id, ")")
+	else:
+		print("Token Refreshed: ", user_id)
 	emit_signal("token_refresh_done", true)
 	if not was_logged_in or user_id != prev_user_id:
 		emit_signal("auth_state_changed", true)
@@ -205,8 +211,20 @@ func _on_signup_failed(code, message):
 func _on_logged_out():
 	user_id = ""
 	is_logged_in = false
+	_temp_all_time.clear()
+	_temp_seasonal.clear()
 	emit_signal("auth_state_changed", false)
-	print("User Logged Out")
+	if OS.is_debug_build():
+		print("[Debug] User Logged Out: ", Global.player_name)
+	else:
+		print("User Logged Out")
+
+func get_is_registered() -> bool:
+	if not is_logged_in or user_id == "" or not Firebase.Auth.auth:
+		return false
+	var email = Firebase.Auth.auth.get("email", "")
+	# Guests have no email or a dummy one, regular users have a real email
+	return email != "" and email != "null"
 
 func get_current_user_id() -> String:
 	if is_logged_in and user_id != "":
@@ -216,7 +234,7 @@ func get_current_user_id() -> String:
 func is_claiming_profile() -> bool:
 	return current_auth_state != AuthStates.ANONYMOUS_SESSION
 
-func submit_score(score: int, mode: int, player_name: String, force_overwrite: bool = false):
+func submit_score(score: int, mode: int, player_name: String, level: int, force_overwrite: bool = false):
 	if mode != 1:
 		print("[FirebaseManager] Skipping leaderboard submission for non-escalation mode: ", mode)
 		emit_signal("score_sync_finished", true)
@@ -242,27 +260,30 @@ func submit_score(score: int, mode: int, player_name: String, force_overwrite: b
 	var data = {
 		"uid": uid,
 		"score": score,
+		"level": level,
 		"player_name": player_name,
 		"timestamp": OS.get_unix_time(),
 		"is_registered": is_registered
 	}
 	
-	var time_dict = OS.get_datetime()
+	var time_dict = OS.get_datetime(true)
 	var period_str = str(time_dict.year) + "-" + str(time_dict.month).pad_zeros(2)
 	var seasonal_data = data.duplicate()
 	seasonal_data["period"] = period_str
 	
-	_upsert_doc(all_time_collection, uid, data, force_overwrite)
-	yield(self, "upsert_completed")
-	var success1 = _last_upsert_success
-	
-	_upsert_doc(seasonal_collection, uid, seasonal_data, force_overwrite)
-	yield(self, "upsert_completed")
-	var success2 = _last_upsert_success
-	
-	emit_signal("score_sync_finished", success1 and success2)
+	var success1 = yield(_upsert_doc(all_time_collection, uid, data, force_overwrite), "completed")
+	var success2 = yield(_upsert_doc(seasonal_collection, uid, seasonal_data, force_overwrite), "completed")
+	var success = success1 and success2
+	if OS.is_debug_build():
+		if success:
+			print("[Debug] Leaderboard score successfully synced to Firestore for: ", player_name, " - Score: ", score)
+		else:
+			print("[Debug] Leaderboard score sync FAILED for: ", player_name)
+	if success:
+		fetch_leaderboards(true)
+	emit_signal("score_sync_finished", success)
 
-func _upsert_doc(collection, uid, data, force_overwrite: bool = false):
+func _upsert_doc(collection, uid, data, force_overwrite: bool = false) -> bool:
 	var doc = yield(collection.get_doc(uid), "completed")
 	var result = null
 	if doc != null:
@@ -275,36 +296,58 @@ func _upsert_doc(collection, uid, data, force_overwrite: bool = false):
 			if new_score <= existing_score:
 				var existing_name = doc.get_value("player_name")
 				var new_name = data.get("player_name", "")
-				if new_name != "" and existing_name != new_name:
-					print("[Firebase] Score is not higher, but player name changed from '", existing_name, "' to '", new_name, "'. Updating name on leaderboard.")
-					doc.add_or_update_field("player_name", new_name)
-					doc.add_or_update_field("timestamp", OS.get_unix_time())
-					if data.has("is_registered"):
-						doc.add_or_update_field("is_registered", data.get("is_registered"))
-					result = yield(collection.update(doc), "completed")
-					_last_upsert_success = (result != null)
-					emit_signal("upsert_completed")
-					return
+				var existing_reg = doc.get_value("is_registered")
+				if existing_reg == null:
+					existing_reg = false
 				else:
-					print("[Firebase] Score is not higher and name is same. Skipping update.")
-					_last_upsert_success = true
-					emit_signal("upsert_completed")
-					return
+					existing_reg = bool(existing_reg)
+				var new_reg = bool(data.get("is_registered", false))
+				
+				var name_changed = (new_name != "" and existing_name != new_name)
+				var reg_changed = (existing_reg != new_reg)
+				
+				if name_changed or reg_changed:
+					if OS.is_debug_build():
+						var col_type = "All-Time" if "alltime" in collection.collection_name else "Seasonal"
+						print("[Debug] [Firebase ", col_type, "] Score is not higher, but info changed (name_changed: ", name_changed, ", reg_changed: ", reg_changed, "). Updating entry.")
+					doc.add_or_update_field("player_name", new_name if new_name != "" else existing_name)
+					doc.add_or_update_field("timestamp", OS.get_unix_time())
+					doc.add_or_update_field("is_registered", new_reg)
+					result = yield(collection.update(doc), "completed")
+					return result != null
+				else:
+					if OS.is_debug_build():
+						var col_type = "All-Time" if "alltime" in collection.collection_name else "Seasonal"
+						print("[Debug] [Firebase ", col_type, "] Score not higher, name and registration status unchanged. Skipping update.")
+					return true
 		
 		for k in data:
 			doc.add_or_update_field(k, data[k])
 		result = yield(collection.update(doc), "completed")
 	else:
 		result = yield(collection.add(uid, data), "completed")
-	_last_upsert_success = (result != null)
-	emit_signal("upsert_completed")
+	return result != null
 	
-func fetch_leaderboards():
+func fetch_leaderboards(force_refresh: bool = false):
 	if not is_config_available:
 		emit_signal("leaderboard_updated", null, null)
 		return
 		
-	# Firestore query
+	if not force_refresh and not _temp_all_time.empty() and not _temp_seasonal.empty():
+		if OS.is_debug_build():
+			print("[Debug] Leaderboard fetched from local cache.")
+		emit_signal("leaderboard_updated", _temp_all_time, _temp_seasonal)
+		return
+		
+	if _is_fetching_leaderboards:
+		if OS.is_debug_build():
+			print("[Debug] Leaderboard fetch already in progress. Ignoring duplicate request.")
+		return
+		
+	_is_fetching_leaderboards = true
+		
+	var start_time = OS.get_ticks_msec()
+		
 	var all_time_query = FirestoreQuery.new()
 	all_time_query.from("leaderboard_rushybird_alltime", false)
 	all_time_query.order_by("score", FirestoreQuery.DIRECTION.DESCENDING)
@@ -313,7 +356,7 @@ func fetch_leaderboards():
 	var all_time_result = yield(Firebase.Firestore.query(all_time_query), "completed")
 	_on_all_time_result(all_time_result)
 	
-	var time_dict = OS.get_datetime()
+	var time_dict = OS.get_datetime(true)
 	var period_str = str(time_dict.year) + "-" + str(time_dict.month).pad_zeros(2)
 	
 	var seasonal_query = FirestoreQuery.new()
@@ -324,6 +367,17 @@ func fetch_leaderboards():
 	
 	var seasonal_result = yield(Firebase.Firestore.query(seasonal_query), "completed")
 	_on_seasonal_result(seasonal_result)
+
+	if OS.is_debug_build():
+		if all_time_result != null and seasonal_result != null:
+			print("[Debug] Successfully connected and retrieved data from Firebase Firestore.")
+		else:
+			print("[Debug] Warning: Retrieved empty or partial leaderboard data from Firestore.")
+		print("[Debug] Leaderboard fetch took ", OS.get_ticks_msec() - start_time, " ms")
+		
+
+		
+	_is_fetching_leaderboards = false
 
 var _temp_all_time = []
 var _temp_seasonal = []
@@ -362,7 +416,7 @@ func _check_leaderboard_complete():
 func _on_query_error(code, status, message):
 	print("Firestore Query Error: ", code, status, message)
 
-func submit_stats(stats: Dictionary, hiscores: Dictionary, highest_levels: Dictionary, player_name: String):
+func submit_stats(player_data: Dictionary):
 	if not is_config_available:
 		emit_signal("stats_sync_finished", false, 0)
 		return
@@ -372,26 +426,19 @@ func submit_stats(stats: Dictionary, hiscores: Dictionary, highest_levels: Dicti
 		emit_signal("stats_sync_finished", false, 0)
 		return
 		
-	var stats_collection = Firebase.Firestore.collection("rushybird_player_stats")
+	var stats_collection = Firebase.Firestore.collection("player_data_rushybird")
 	
-	var data = {
-		"uid": uid,
-		"player_name": player_name,
-		"classic_highscore": int(hiscores.get(0, 0)),
-		"escalation_highscore": int(hiscores.get(1, 0)),
-		"escalation_highest_level": int(highest_levels.get(1, 1)),
-		"total_games": int(stats.get("total_games", 0)),
-		"playtime": float(stats.get("playtime", 0.0)),
-		"total_deaths": int(stats.get("total_deaths", 0)),
-		"total_revives": int(stats.get("total_revives", 0)),
-		"total_distance": float(stats.get("total_distance", 0.0)),
-		"last_updated": int(OS.get_unix_time())
-	}
+	player_data["uid"] = uid
+	player_data["is_registered"] = get_is_registered()
+	player_data["last_updated"] = OS.get_unix_time()
 	
-	_upsert_doc(stats_collection, uid, data)
-	yield(self, "upsert_completed")
-	var success = _last_upsert_success
-	emit_signal("stats_sync_finished", success, data["last_updated"] if success else 0)
+	var success = yield(_upsert_doc(stats_collection, uid, player_data), "completed")
+	if OS.is_debug_build():
+		if success:
+			print("[Debug] Player stats successfully synced to Firestore for: ", Global.player_name)
+		else:
+			print("[Debug] Player stats sync FAILED for: ", Global.player_name)
+	emit_signal("stats_sync_finished", success, player_data.get("last_updated", OS.get_unix_time()) if success else 0)
 # --- Profile Linking & Conflict Handling ---
 
 var _cached_link_email = ""
@@ -399,7 +446,7 @@ var _cached_link_password = ""
 var _cached_link_oauth_token = ""
 var _cached_link_oauth_provider = null
 
-func start_profile_claim_email(email: String, password: String, stats: Dictionary, hiscores: Dictionary, highest_levels: Dictionary, p_name: String):
+func start_profile_claim_email(email: String, password: String, player_data: Dictionary):
 	if Firebase.Auth.auth == null or not Firebase.Auth.auth.has("idtoken"):
 		emit_signal("profile_claim_failed", "Not authenticated as guest.")
 		return
@@ -416,10 +463,8 @@ func start_profile_claim_email(email: String, password: String, stats: Dictionar
 	current_auth_state = AuthStates.LINKING_IN_PROGRESS
 	
 	cached_guest_auth = Firebase.Auth.auth.duplicate()
-	cached_guest_stats = stats.duplicate()
-	cached_guest_hiscores = hiscores.duplicate()
-	cached_guest_highest_levels = highest_levels.duplicate()
-	cached_guest_name = p_name
+	cached_guest_stats = player_data.duplicate()
+	
 	
 	_cached_link_email = email
 	_cached_link_password = password
@@ -427,7 +472,7 @@ func start_profile_claim_email(email: String, password: String, stats: Dictionar
 	
 	Firebase.Auth.link_with_email_and_password(cached_guest_auth.idtoken, email, password)
 
-func start_profile_claim_oauth(token: String, provider, stats: Dictionary, hiscores: Dictionary, highest_levels: Dictionary, p_name: String):
+func start_profile_claim_oauth(token: String, provider, player_data: Dictionary):
 	if Firebase.Auth.auth == null or not Firebase.Auth.auth.has("idtoken"):
 		emit_signal("profile_claim_failed", "Not authenticated as guest.")
 		return
@@ -444,10 +489,8 @@ func start_profile_claim_oauth(token: String, provider, stats: Dictionary, hisco
 	current_auth_state = AuthStates.LINKING_IN_PROGRESS
 	
 	cached_guest_auth = Firebase.Auth.auth.duplicate()
-	cached_guest_stats = stats.duplicate()
-	cached_guest_hiscores = hiscores.duplicate()
-	cached_guest_highest_levels = highest_levels.duplicate()
-	cached_guest_name = p_name
+	cached_guest_stats = player_data.duplicate()
+	
 	
 	_cached_link_email = ""
 	_cached_link_password = ""
@@ -469,7 +512,7 @@ func _handle_linking_conflict(code, message):
 
 func _fetch_cloud_stats_for_conflict():
 	print("[FirebaseManager] Fetching cloud stats for conflict detection for UID: ", target_cloud_uid)
-	var collection = Firebase.Firestore.collection("rushybird_player_stats")
+	var collection = Firebase.Firestore.collection("player_data_rushybird")
 	var doc = yield(collection.get_doc(target_cloud_uid), "completed")
 	cached_cloud_stats = {}
 	if doc != null and typeof(doc) == TYPE_OBJECT and doc.has_method("get_value"):
@@ -483,6 +526,7 @@ func _fetch_cloud_stats_for_conflict():
 		var revives = doc.get_value("total_revives")
 		var dist = doc.get_value("total_distance")
 		var play = doc.get_value("playtime")
+		var changed_name_logged = doc.get_value("has_changed_name_logged_in")
 		
 		cached_cloud_stats = {
 			"player_name": str(p_name) if p_name != null else "",
@@ -493,7 +537,8 @@ func _fetch_cloud_stats_for_conflict():
 			"total_deaths": int(deaths) if deaths != null else 0,
 			"total_revives": int(revives) if revives != null else 0,
 			"total_distance": float(dist) if dist != null else 0.0,
-			"playtime": float(play) if play != null else 0.0
+			"playtime": float(play) if play != null else 0.0,
+			"has_changed_name_logged_in": bool(changed_name_logged) if changed_name_logged != null else false
 		}
 		print("[FirebaseManager] Parsed cloud stats: ", cached_cloud_stats)
 	else:
@@ -501,7 +546,8 @@ func _fetch_cloud_stats_for_conflict():
 		cached_cloud_stats = {
 			"player_name": "",
 			"classic_highscore": 0, "escalation_highscore": 0, "escalation_highest_level": 1,
-			"total_games": 0, "total_deaths": 0, "total_revives": 0, "total_distance": 0.0, "playtime": 0.0
+			"total_games": 0, "total_deaths": 0, "total_revives": 0, "total_distance": 0.0, "playtime": 0.0,
+			"has_changed_name_logged_in": false
 		}
 	var has_cloud_stats = cached_cloud_stats.get("classic_highscore", 0) > 0 or cached_cloud_stats.get("escalation_highscore", 0) > 0 or cached_cloud_stats.get("total_games", 0) > 0
 	print("[FirebaseManager] has_cloud_stats = ", has_cloud_stats)
@@ -520,7 +566,7 @@ func resolve_conflict_overwrite_cloud():
 	is_logged_in = true
 	emit_signal("auth_state_changed", true)
 	
-	submit_stats(cached_guest_stats, cached_guest_hiscores, cached_guest_highest_levels, cached_guest_name)
+	submit_stats(cached_guest_stats)
 	yield(self, "stats_sync_finished")
 	
 	# Delete existing cloud leaderboard entries to permit overwriting with lower score (bypasses update rule via create)
@@ -532,9 +578,9 @@ func resolve_conflict_overwrite_cloud():
 	_delete_doc(seasonal_col, user_id)
 	yield(self, "delete_completed")
 	
-	var score = cached_guest_hiscores.get(1, 0)
+	var score = int(cached_guest_stats.get("escalation_highscore", 0))
 	if score > 0: 
-		submit_score(score, 1, cached_guest_name, true)
+		submit_score(score, 1, cached_guest_stats.get("player_name", ""), int(cached_guest_stats.get("escalation_highest_level", 1)), true)
 		yield(self, "score_sync_finished")
 		
 	if guest_uid != "" and guest_uid != user_id:
@@ -559,13 +605,17 @@ func resolve_conflict_discard_guest():
 
 func resolve_conflict_cancel():
 	current_auth_state = AuthStates.CANCELLING
-	Firebase.Auth.logout()
 	_set_active_auth(cached_guest_auth)
 	Firebase.Auth.save_auth(cached_guest_auth)
+	Firebase.Auth.begin_refresh_countdown()
 	user_id = cached_guest_auth.localid
 	is_logged_in = true
 	emit_signal("auth_state_changed", true)
 	current_auth_state = AuthStates.ANONYMOUS_SESSION
+	
+	if OS.is_debug_build():
+		var name_str = Global.player_name if Global.player_name != "" else "Guest"
+		print("[Debug] Profile claim cancelled. Reverted to guest session: ", name_str, " (UID: ", user_id, ")")
 
 func _set_active_auth(auth_dict: Dictionary):
 	Firebase.Auth.auth = auth_dict
@@ -578,8 +628,7 @@ func _delete_doc(collection, doc_name):
 	var doc = FirestoreDocument.new()
 	doc.doc_name = doc_name
 	doc.collection_name = collection.collection_name
-	var success = yield(collection.delete(doc), "completed")
-	_last_delete_success = success
+	yield(collection.delete(doc), "completed")
 	emit_signal("delete_completed")
 
 func _clean_abandoned_guest(guest_uid: String):
@@ -599,9 +648,15 @@ func _clean_abandoned_guest(guest_uid: String):
 	_delete_doc(seasonal_col, guest_uid)
 	yield(self, "delete_completed")
 	
-	var stats_col = Firebase.Firestore.collection("rushybird_player_stats")
+	var stats_col = Firebase.Firestore.collection("player_data_rushybird")
 	_delete_doc(stats_col, guest_uid)
 	yield(self, "delete_completed")
+	
+	print("[Firebase] Deleting anonymous guest account from Firebase Authentication...")
+	Firebase.Auth.delete_user_account()
+	var auth_result : Array = yield(Firebase.Auth, "auth_request")
+	var status_code = auth_result[0] if typeof(auth_result) == TYPE_ARRAY and auth_result.size() > 0 else "Unknown"
+	print("[Firebase] Guest auth account deletion finished. Status: ", status_code)
 	
 	_set_active_auth(permanent_auth)
 	print("[Firebase] Clean up complete for guest UID: ", guest_uid)
@@ -610,12 +665,12 @@ func _clean_abandoned_guest(guest_uid: String):
 func _migrate_guest_data_to_new_user(guest_uid: String):
 	print("[Firebase] Migrating guest data to new user ID: ", user_id)
 	
-	submit_stats(cached_guest_stats, cached_guest_hiscores, cached_guest_highest_levels, cached_guest_name)
+	submit_stats(cached_guest_stats)
 	yield(self, "stats_sync_finished")
 	
-	var score = cached_guest_hiscores.get(1, 0)
+	var score = int(cached_guest_stats.get("escalation_highscore", 0))
 	if score > 0: 
-		submit_score(score, 1, cached_guest_name)
+		submit_score(score, 1, cached_guest_stats.get("player_name", ""), int(cached_guest_stats.get("escalation_highest_level", 1)))
 		yield(self, "score_sync_finished")
 			
 	_clean_abandoned_guest(guest_uid)
@@ -633,16 +688,15 @@ func _on_js_message(args):
 				var token = extracted[1]
 				_on_google_code_received(token)
 
-func start_google_login(stats: Dictionary, hiscores: Dictionary, highest_levels: Dictionary, p_name: String):
-	_cached_link_stats = stats.duplicate()
-	_cached_link_hiscores = hiscores.duplicate()
-	_cached_link_highest_levels = highest_levels.duplicate()
-	_cached_link_name = p_name
+func start_google_login(player_data: Dictionary):
+	if OS.get_name() == "Android":
+		print("[FirebaseManager] Google login is temporarily disabled on Android.")
+		emit_signal("profile_claim_failed", "Google login is temporarily disabled on Android.")
+		return
+
+	_cached_link_stats = player_data.duplicate()
+	cached_guest_stats = player_data.duplicate()
 	
-	cached_guest_stats = stats.duplicate()
-	cached_guest_hiscores = hiscores.duplicate()
-	cached_guest_highest_levels = highest_levels.duplicate()
-	cached_guest_name = p_name
 	
 	if Firebase.Auth.auth != null:
 		cached_guest_auth = Firebase.Auth.auth.duplicate()
@@ -673,9 +727,6 @@ func _on_google_code_received(code: String):
 		current_auth_state = AuthStates.LINKING_IN_PROGRESS
 		cached_guest_auth = Firebase.Auth.auth.duplicate()
 		cached_guest_stats = _cached_link_stats.duplicate()
-		cached_guest_hiscores = _cached_link_hiscores.duplicate()
-		cached_guest_highest_levels = _cached_link_highest_levels.duplicate()
-		cached_guest_name = _cached_link_name
 		
 		_cached_link_email = ""
 		_cached_link_password = ""
