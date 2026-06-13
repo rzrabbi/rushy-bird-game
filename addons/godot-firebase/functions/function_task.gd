@@ -1,0 +1,55 @@
+## @meta-authors Nicolò 'fenix' Santilio,
+## @meta-version 1.2
+##
+## ex.
+## [code]var task : FirestoreTask = Firebase.Firestore.query(query)[/code]
+## [code]var result : Array = yield(task, "task_finished")[/code]
+## [code]var result : Array = yield(task, "result_query")[/code]
+## [code]var result : Array = yield(Firebase.Firestore, "task_finished")[/code]
+## [code]var result : Array = yield(Firebase.Firestore, "result_query")[/code]
+##
+## @tutorial https://github.com/GodotNuts/GodotFirebase/wiki/Firestore#FirestoreTask
+
+tool
+class_name FunctionTask
+extends Reference
+
+## Emitted when a request is completed. The request can be successful or not successful: if not, an [code]error[/code] Dictionary will be passed as a result.
+## @arg-types Variant
+signal task_finished(result)
+
+## Emitted when a cloud function is correctly executed, returning the Response Code and Result Body
+## @arg-types FirestoreDocument
+signal function_executed(response, result)
+
+## Emitted when a request is [b]not[/b] successfully completed.
+## @arg-types Dictionary
+signal task_error(code, status, message)
+
+## A variable, temporary holding the result of the request.
+var data: Dictionary
+var error: Dictionary
+
+var _response_headers : PoolStringArray = PoolStringArray()
+var _response_code : int = 0
+
+var _method : int = -1
+var _url : String = ""
+var _fields : String = ""
+var _headers : PoolStringArray = []
+
+func _on_request_completed(result : int, response_code : int, headers : PoolStringArray, body : PoolByteArray) -> void:
+	var bod
+	if validate_json(body.get_string_from_utf8()).empty():
+		bod = JSON.parse(body.get_string_from_utf8()).result
+	else:
+		bod = {content = body.get_string_from_utf8()}
+
+	data = bod
+	if response_code == HTTPClient.RESPONSE_OK and data != null:
+		emit_signal("function_executed", result, data)
+	else:
+		error = {result=result, response_code=response_code, data=data}
+		emit_signal("task_error", result, response_code, str(data))
+
+	emit_signal("task_finished", data)

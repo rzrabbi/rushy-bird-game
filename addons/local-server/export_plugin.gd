@@ -9,7 +9,7 @@ func _export_begin(features: PoolStringArray, is_debug: bool, path: String, flag
 		
 		# Copy and customize serve.js
 		var source_file = File.new()
-		if source_file.open("res://addons/local_server/serve.js", File.READ) == OK:
+		if source_file.open("res://addons/local-server/serve.js", File.READ) == OK:
 			var content = source_file.get_as_text()
 			source_file.close()
 			
@@ -43,7 +43,7 @@ func _export_begin(features: PoolStringArray, is_debug: bool, path: String, flag
 		
 		# Copy and customize play.bat
 		var bat_source = File.new()
-		if bat_source.open("res://addons/local_server/play.bat", File.READ) == OK:
+		if bat_source.open("res://addons/local-server/play.bat", File.READ) == OK:
 			var content = bat_source.get_as_text()
 			bat_source.close()
 			

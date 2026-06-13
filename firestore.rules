@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if the score is physically possible (e.g., under 10000 points)
+    function isRealisticScore(score) {
+      return score is int && score >= 0 && score < 10000;
+    }
+
+    // Check if the level is realistic (levels start at 1, human limit is well under 1000)
+    function isRealisticLevel(level) {
+      return level is int && level >= 1 && level <= 1000;
+    }
+
+    // Leaderboard All-Time
+    match /leaderboard_rushybird_alltime/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && isRealisticLevel(request.resource.data.level)
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 20
+        && request.resource.data.timestamp is int
+        && request.resource.data.is_registered is bool;
+        
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && isRealisticLevel(request.resource.data.level)
+        && request.resource.data.score >= resource.data.score // Allow updates if score is equal (e.g. name update) or greater
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 20
+        && request.resource.data.timestamp is int
+        && request.resource.data.is_registered is bool;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Leaderboard Seasonal
+    match /leaderboard_rushybird_seasonal/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && isRealisticLevel(request.resource.data.level)
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 20
+        && request.resource.data.period is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.is_registered is bool;
+        
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && isRealisticScore(request.resource.data.score)
+        && isRealisticLevel(request.resource.data.level)
+        && request.resource.data.score >= resource.data.score // Allow updates if score is equal (e.g. name update) or greater
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 20
+        && request.resource.data.period is string
+        && request.resource.data.timestamp is int
+        && request.resource.data.is_registered is bool;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Player Stats
+    match /player_data_rushybird/{userId} {
+      allow read: if true;
+      allow create, update: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() <= 20
+        && isRealisticScore(request.resource.data.classic_highscore)
+        && isRealisticScore(request.resource.data.escalation_highscore)
+        && isRealisticLevel(request.resource.data.escalation_highest_level)
+        && request.resource.data.total_games is int
+        && request.resource.data.playtime is number
+        && request.resource.data.total_deaths is int
+        && request.resource.data.total_revives is int
+        && request.resource.data.total_distance is number
+        && request.resource.data.last_updated is int
+        && request.resource.data.is_registered is bool;
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

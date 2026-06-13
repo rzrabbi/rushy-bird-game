@@ -16,6 +16,8 @@ const cheatsheet: Dictionary = preload("Cheatsheet.gd").cheatsheet_lut
 var font: DynamicFont = DynamicFont.new()
 
 func _init():
+	font.use_filter = true
+	font.use_mipmaps = true
 	match icon_type:
 		"solid", "regular", "brands":
 			font.set_font_data(icon_font[icon_type])
