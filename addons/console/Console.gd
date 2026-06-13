@@ -222,8 +222,14 @@ func _ready():
 		add_command_autocomplete_list("delete_guest", ["confirm"])
 
 
+func _is_mobile_web_device() -> bool:
+	if OS.has_feature("HTML5") or OS.has_feature("JavaScript"):
+		var js_is_desktop = JavaScript.eval("/Windows|Macintosh|Linux/i.test(navigator.userAgent) && !/Mobi|Android|Tablet|iPad|iPhone/i.test(navigator.userAgent)")
+		return not js_is_desktop
+	return false
+
 func handle_mobile_tap(pos: Vector2):
-	if control.visible:
+	if _is_mobile_web_device() or control.visible:
 		return
 	if pos.x <= 200 and pos.y <= 200:
 		var current_time = OS.get_ticks_msec()
@@ -239,6 +245,9 @@ func handle_mobile_tap(pos: Vector2):
 
 
 func _input(event : InputEvent):
+	if _is_mobile_web_device():
+		return
+		
 	if event is InputEventScreenTouch and event.pressed:
 		if control.visible:
 			var line_edit_bottom = line_edit.rect_global_position.y + line_edit.rect_size.y
@@ -294,6 +303,9 @@ func _input(event : InputEvent):
 
 
 func toggle_console():
+	if _is_mobile_web_device():
+		return
+		
 	if not control.visible:
 		var main_node = get_tree().root.get_node_or_null("Main")
 		if is_instance_valid(main_node) and main_node.mode_level == 1:

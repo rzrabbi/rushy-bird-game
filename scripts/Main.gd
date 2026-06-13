@@ -99,6 +99,7 @@ var active_panel_name: String = "" # Tracks which panel is open: "", "leaderboar
 
 var music_volume: float = 1.0
 var sfx_enabled: bool = true
+var onscreen_keyboard_setting_enabled: bool = false
 var cheats_used: bool = false
 
 var main_menu_bgm: AudioStreamPlayer
@@ -125,6 +126,24 @@ func create_audio(node_name: String, path: String) -> AudioStreamPlayer:
 	return player
 
 func _ready():
+	# Set aspect ratio to keep automatically for:
+	# - Desktop platforms (native or browser)
+	# - Tablet devices and screens wider than the design aspect ratio (9:16) to prevent horizontal layout stretching
+	var is_desktop = OS.get_name() in ["Windows", "OSX", "X11"]
+	if OS.has_feature("HTML5"):
+		var js_is_desktop = JavaScript.eval("/Windows|Macintosh|Linux/i.test(navigator.userAgent) && !/Mobi|Android|Tablet|iPad|iPhone/i.test(navigator.userAgent)")
+		if js_is_desktop:
+			is_desktop = true
+
+	var base_width = ProjectSettings.get_setting("display/window/size/width")
+	var base_height = ProjectSettings.get_setting("display/window/size/height")
+	var design_ratio = float(base_width) / float(base_height) # ~0.5625 (9:16)
+	
+	var window_size = OS.get_window_size()
+	var current_ratio = float(window_size.x) / float(window_size.y)
+	
+	if is_desktop or current_ratio > (design_ratio + 0.01):
+		get_tree().set_screen_stretch(SceneTree.STRETCH_MODE_2D, SceneTree.STRETCH_ASPECT_KEEP, Vector2(base_width, base_height))
 
 	# Warm up the DynamicFont cache on startup to prevent CPU spikes and audio stuttering on mobile web exports
 	var warm_fonts = [
@@ -225,7 +244,43 @@ func _ready():
 	sfx_button.connect("toggled", self, "_on_SfxToggle_toggled")
 	$UI/Control/SettingsPanel/SfxToggleAnchor.add_child(sfx_button)
 	
+	# Add Onscreen Keyboard toggle for PC devices (native or browser)
+	if _is_pc_device():
+		var kb_label = Label.new()
+		kb_label.name = "KeyboardLabel"
+		kb_label.text = "On-Screen Keyboard"
+		kb_label.align = Label.ALIGN_CENTER
+		kb_label.anchor_left = 0.1
+		kb_label.anchor_right = 0.9
+		kb_label.margin_top = 720.0
+		kb_label.margin_bottom = 780.0
+		
+		var sfx_lbl = $UI/Control/SettingsPanel/SfxLabel
+		if sfx_lbl:
+			var font = sfx_lbl.get_font("font")
+			if font:
+				kb_label.add_font_override("font", font.duplicate())
+		$UI/Control/SettingsPanel.add_child(kb_label)
+		
+		var kb_anchor = Control.new()
+		kb_anchor.name = "KeyboardToggleAnchor"
+		kb_anchor.anchor_left = 0.5
+		kb_anchor.anchor_right = 0.5
+		kb_anchor.margin_left = -80.0
+		kb_anchor.margin_top = 800.0
+		kb_anchor.margin_right = 80.0
+		kb_anchor.margin_bottom = 880.0
+		$UI/Control/SettingsPanel.add_child(kb_anchor)
+		
+		var kb_toggle = CustomToggle.new(onscreen_keyboard_setting_enabled)
+		kb_toggle.name = "KeyboardToggle"
+		kb_toggle.anchor_right = 1.0
+		kb_toggle.anchor_bottom = 1.0
+		kb_toggle.connect("toggled", self, "_on_KeyboardToggle_toggled")
+		kb_anchor.add_child(kb_toggle)
+	
 	$UI/Control/SettingsPanel/VersionLabel.text = "Game Version: " + str(ProjectSettings.get_setting("application/config/version"))
+
 	
 	speed_tween = Tween.new()
 	add_child(speed_tween)
@@ -697,6 +752,7 @@ func _ready():
 
 	update_mode_button_text()
 	update_score_display()
+	_update_onscreen_keyboard_visibility()
 	
 	if Global.auto_start:
 		Global.auto_start = false
@@ -723,6 +779,7 @@ func save_hiscore(sync_to_cloud: bool = true):
 		"mode": mode_level,
 		"music_volume": music_volume,
 		"sfx_enabled": sfx_enabled,
+		"onscreen_keyboard_setting_enabled": onscreen_keyboard_setting_enabled,
 		"has_changed_name": Global.has_changed_name,
 		"last_sync_timestamp": last_sync_timestamp
 	}
@@ -765,6 +822,9 @@ func load_hiscore():
 			
 		if content.has("sfx_enabled"):
 			sfx_enabled = content.get("sfx_enabled")
+			
+		if content.has("onscreen_keyboard_setting_enabled"):
+			onscreen_keyboard_setting_enabled = content.get("onscreen_keyboard_setting_enabled")
 			
 		if content.has("has_changed_name"):
 			Global.has_changed_name = content.get("has_changed_name")
@@ -1475,6 +1535,7 @@ func _on_ProfileButton_pressed():
 func _on_CloseProfile_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
+	_close_onscreen_keyboard()
 	
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node: profile_panel_node.hide()
@@ -1522,6 +1583,10 @@ func _on_SettingsButton_pressed():
 		_hide_active_screen()
 	
 	active_panel_name = "settings"
+	if is_instance_valid(settings_panel):
+		var kb_toggle = settings_panel.get_node_or_null("KeyboardToggleAnchor/KeyboardToggle")
+		if kb_toggle and kb_toggle.has_method("set_on"):
+			kb_toggle.set_on(onscreen_keyboard_setting_enabled)
 	settings_panel.show()
 
 func _on_CloseSettings_pressed():
@@ -1594,6 +1659,8 @@ func _on_ResetStats_pressed():
 	
 	music_volume = 1.0
 	sfx_enabled = true
+	onscreen_keyboard_setting_enabled = false
+	_update_onscreen_keyboard_visibility()
 	
 	_apply_sfx_volume()
 	var raw_db = linear2db(music_volume) if music_volume > 0.001 else -80.0
@@ -1611,6 +1678,10 @@ func _on_ResetStats_pressed():
 		var toggle = settings_panel.get_node_or_null("SfxToggleAnchor/SfxToggle")
 		if toggle and toggle.has_method("set_on"):
 			toggle.set_on(sfx_enabled)
+			
+		var kb_toggle = settings_panel.get_node_or_null("KeyboardToggleAnchor/KeyboardToggle")
+		if kb_toggle and kb_toggle.has_method("set_on"):
+			kb_toggle.set_on(onscreen_keyboard_setting_enabled)
 
 func increment_score(obstacle_position: Vector3 = Vector3.ZERO):
 	var pts = 1
@@ -2261,22 +2332,22 @@ func _setup_firebase_ui():
 	game_over_prompt_msg.add_color_override("font_color", Color(0.9, 0.9, 0.95))
 	game_over_name_prompt.add_child(game_over_prompt_msg)
 	
-	var input_style = StyleBoxFlat.new()
-	input_style.bg_color = Color(0.1, 0.1, 0.15, 0.9)
-	input_style.border_width_left = 3
-	input_style.border_width_top = 3
-	input_style.border_width_right = 3
-	input_style.border_width_bottom = 3
-	input_style.border_color = Color(0.2, 0.2, 0.3)
-	input_style.corner_radius_top_left = 12
-	input_style.corner_radius_top_right = 12
-	input_style.corner_radius_bottom_right = 12
-	input_style.corner_radius_bottom_left = 12
-	input_style.content_margin_left = 20
-	input_style.content_margin_right = 20
+	game_over_input_style = StyleBoxFlat.new()
+	game_over_input_style.bg_color = Color(0.1, 0.1, 0.15, 0.9)
+	game_over_input_style.border_width_left = 3
+	game_over_input_style.border_width_top = 3
+	game_over_input_style.border_width_right = 3
+	game_over_input_style.border_width_bottom = 3
+	game_over_input_style.border_color = Color(0.2, 0.2, 0.3)
+	game_over_input_style.corner_radius_top_left = 12
+	game_over_input_style.corner_radius_top_right = 12
+	game_over_input_style.corner_radius_bottom_right = 12
+	game_over_input_style.corner_radius_bottom_left = 12
+	game_over_input_style.content_margin_left = 20
+	game_over_input_style.content_margin_right = 20
 	
-	var input_focus = input_style.duplicate()
-	input_focus.border_color = Color(0.4, 0.8, 0.2)
+	game_over_input_focus = game_over_input_style.duplicate()
+	game_over_input_focus.border_color = Color(0.4, 0.8, 0.2)
 	
 	game_over_name_input = LineEdit.new()
 	game_over_name_input.placeholder_text = "Your Name"
@@ -2286,8 +2357,8 @@ func _setup_firebase_ui():
 	game_over_name_input.margin_top = 200
 	game_over_name_input.margin_bottom = 280
 	game_over_name_input.align = LineEdit.ALIGN_CENTER
-	game_over_name_input.add_stylebox_override("normal", input_style)
-	game_over_name_input.add_stylebox_override("focus", input_focus)
+	game_over_name_input.add_stylebox_override("normal", game_over_input_style)
+	game_over_name_input.add_stylebox_override("focus", game_over_input_focus)
 	game_over_name_input.add_color_override("placeholder_color", Color(0.6, 0.6, 0.7))
 	game_over_name_input.add_color_override("font_color", Color(0.95, 0.95, 0.95))
 	game_over_name_input.add_color_override("cursor_color", Color(1, 1, 1))
@@ -2296,6 +2367,7 @@ func _setup_firebase_ui():
 	game_over_name_input.add_constant_override("caret_width", 3)
 	game_over_name_input.connect("focus_entered", self, "_on_game_over_name_focus_entered")
 	game_over_name_input.connect("focus_exited", self, "_on_game_over_name_focus_exited")
+	game_over_name_input.connect("gui_input", self, "_on_LineEdit_gui_input", [game_over_name_input])
 	
 	var input_font = DynamicFont.new()
 	input_font.font_data = load("res://assets/fonts/LilitaOne-Regular.ttf")
@@ -2523,6 +2595,7 @@ func _on_name_cancel_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
 	is_editing_name = false
+	_close_onscreen_keyboard()
 	_update_manage_account_name_ui()
 
 
@@ -2539,8 +2612,11 @@ func _on_name_submit_pressed():
 			is_editing_name = true
 			_update_manage_account_name_ui()
 			if is_instance_valid(name_input):
-				name_input.grab_focus()
-				name_input.caret_position = name_input.text.length()
+				if _is_onscreen_keyboard_active():
+					_open_onscreen_keyboard_for_field(name_input)
+				else:
+					name_input.grab_focus()
+					name_input.caret_position = name_input.text.length()
 			return
 			
 	var typed_name = name_input.text.strip_edges() if name_input else ""
@@ -2549,6 +2625,7 @@ func _on_name_submit_pressed():
 		
 	if typed_name == Global.player_name:
 		is_editing_name = false
+		_close_onscreen_keyboard()
 		_update_manage_account_name_ui()
 		return
 		
@@ -2559,6 +2636,7 @@ func _on_name_submit_pressed():
 	Global.has_changed_name = true
 		
 	is_editing_name = false
+	_close_onscreen_keyboard()
 	_update_manage_account_name_ui()
 		
 	save_hiscore()
@@ -2569,6 +2647,7 @@ func _on_name_submit_pressed():
 func _on_submit_name_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
+	_close_onscreen_keyboard()
 	
 	var is_name_already_set = Global.has_changed_name
 	if not is_name_already_set:
@@ -2591,6 +2670,7 @@ func _on_submit_name_pressed():
 func _on_skip_submit_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
+	_close_onscreen_keyboard()
 	game_over_name_prompt.hide()
 
 func _show_leaderboard_submit_prompt():
@@ -2613,6 +2693,9 @@ func _show_leaderboard_submit_prompt():
 		game_over_name_input.text = "" # Clear previous inputs
 		
 	game_over_name_prompt.show()
+	
+	if game_over_name_input.visible and _is_onscreen_keyboard_active():
+		_open_onscreen_keyboard_for_field(game_over_name_input)
 
 func _on_stats_sync_finished(success: bool, timestamp: int):
 	last_sync_attempted = true
@@ -2803,6 +2886,19 @@ var claim_profile_panel: Panel
 var claim_email_input: LineEdit
 var claim_pass_input: LineEdit
 var btn_google_claim: Button
+var btn_onscreen_keyboard: TextureButton
+var lbl_onscreen_keyboard: Label
+var indicator_arrow: Label
+var onscreen_keyboard: Control
+var btn_cancel_claim: Button
+var lbl_active_field: Label
+var btn_switch_field: Button
+var active_onscreen_keyboard_field: LineEdit
+var line_edit_style: StyleBoxFlat
+var line_edit_focus: StyleBoxFlat
+var game_over_input_style: StyleBoxFlat
+var game_over_input_focus: StyleBoxFlat
+
 
 
 var conflict_panel: Panel
@@ -3025,7 +3121,7 @@ func _create_claim_profile_panel():
 	input_font.outline_size = 2
 	input_font.outline_color = Color(0.1, 0.1, 0.1, 0.8)
 	
-	var line_edit_style = StyleBoxFlat.new()
+	line_edit_style = StyleBoxFlat.new()
 	line_edit_style.bg_color = Color(0.1, 0.1, 0.15, 0.9) # Dark blue/grey input box
 	line_edit_style.border_width_left = 3
 	line_edit_style.border_width_top = 3
@@ -3039,11 +3135,12 @@ func _create_claim_profile_panel():
 	line_edit_style.content_margin_left = 30
 	line_edit_style.content_margin_right = 30
 	
-	var line_edit_focus = line_edit_style.duplicate()
+	line_edit_focus = line_edit_style.duplicate()
 	line_edit_focus.border_color = Color(0.4, 0.8, 0.2) # Active green border on focus
 	
 	claim_email_input = LineEdit.new()
 	claim_email_input.placeholder_text = "Email Address"
+	claim_email_input.virtual_keyboard_enabled = false
 	claim_email_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
 	claim_email_input.anchor_left = 0.15
 	claim_email_input.anchor_right = 0.85
@@ -3059,10 +3156,14 @@ func _create_claim_profile_panel():
 	claim_email_input.caret_blink_speed = 0.65
 	claim_email_input.add_constant_override("caret_width", 3)
 	claim_profile_panel.add_child(claim_email_input)
+	claim_email_input.connect("text_entered", self, "_on_Email_text_entered")
+	claim_email_input.connect("focus_entered", self, "_on_input_focus_entered", [claim_email_input])
+	claim_email_input.connect("gui_input", self, "_on_LineEdit_gui_input", [claim_email_input])
 	
 	claim_pass_input = LineEdit.new()
 	claim_pass_input.placeholder_text = "Password"
 	claim_pass_input.secret = true
+	claim_pass_input.virtual_keyboard_enabled = false
 	claim_pass_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD
 	claim_pass_input.anchor_left = 0.15
 	claim_pass_input.anchor_right = 0.85
@@ -3078,6 +3179,10 @@ func _create_claim_profile_panel():
 	claim_pass_input.caret_blink_speed = 0.65
 	claim_pass_input.add_constant_override("caret_width", 3)
 	claim_profile_panel.add_child(claim_pass_input)
+	claim_pass_input.connect("text_entered", self, "_on_Password_text_entered")
+	claim_pass_input.connect("focus_entered", self, "_on_input_focus_entered", [claim_pass_input])
+	claim_pass_input.connect("gui_input", self, "_on_LineEdit_gui_input", [claim_pass_input])
+
 	
 	var btn_submit = Button.new()
 	btn_submit.text = "Link Account"
@@ -3202,12 +3307,11 @@ func _create_claim_profile_panel():
 	btn_google_claim.add_color_override("font_color_hover", Color(1, 1, 1))
 	btn_google_claim.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
 	claim_profile_panel.add_child(btn_google_claim)
-	
-	var btn_cancel = Button.new()
-	btn_cancel.text = "Cancel"
-	btn_cancel.anchor_left = 0.15
-	btn_cancel.anchor_right = 0.85
-	btn_cancel.connect("pressed", self, "_on_CancelClaim_pressed")
+	btn_cancel_claim = Button.new()
+	btn_cancel_claim.text = "Cancel"
+	btn_cancel_claim.anchor_left = 0.15
+	btn_cancel_claim.anchor_right = 0.85
+	btn_cancel_claim.connect("pressed", self, "_on_CancelClaim_pressed")
 	
 	if ref_btn:
 		var ref_font = ref_btn.get_font("font")
@@ -3216,7 +3320,7 @@ func _create_claim_profile_panel():
 			cancel_font.size = 45
 			cancel_font.outline_size = 3
 			cancel_font.outline_color = Color(0.4, 0.1, 0.1) # Burgundy red outline
-			btn_cancel.add_font_override("font", cancel_font)
+			btn_cancel_claim.add_font_override("font", cancel_font)
 			
 	var red_normal = StyleBoxFlat.new()
 	red_normal.bg_color = Color(0.8, 0.25, 0.3)
@@ -3247,7 +3351,7 @@ func _create_claim_profile_panel():
 	red_hover.shadow_offset = Vector2(0, 3)
 	red_hover.content_margin_left = 30
 	red_hover.content_margin_right = 30
-
+ 
 	var red_pressed = StyleBoxFlat.new()
 	red_pressed.bg_color = Color(0.7, 0.2, 0.25)
 	red_pressed.anti_aliasing = true
@@ -3263,27 +3367,233 @@ func _create_claim_profile_panel():
 	red_pressed.shadow_offset = Vector2(0, 1)
 	red_pressed.content_margin_left = 30
 	red_pressed.content_margin_right = 30
-
-	btn_cancel.add_stylebox_override("normal", red_normal)
-	btn_cancel.add_stylebox_override("hover", red_hover)
-	btn_cancel.add_stylebox_override("pressed", red_pressed)
-	btn_cancel.add_color_override("font_color", Color(1, 1, 1))
-	btn_cancel.add_color_override("font_color_hover", Color(1, 1, 1))
-	btn_cancel.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
-	claim_profile_panel.add_child(btn_cancel)
+ 
+	btn_cancel_claim.add_stylebox_override("normal", red_normal)
+	btn_cancel_claim.add_stylebox_override("hover", red_hover)
+	btn_cancel_claim.add_stylebox_override("pressed", red_pressed)
+	btn_cancel_claim.add_color_override("font_color", Color(1, 1, 1))
+	btn_cancel_claim.add_color_override("font_color_hover", Color(1, 1, 1))
+	btn_cancel_claim.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
+	claim_profile_panel.add_child(btn_cancel_claim)
 	
-	# Platform specific visibility and positioning
+	# ON SCREEN KEYBOARD button and setup
+	btn_onscreen_keyboard = TextureButton.new()
+	btn_onscreen_keyboard.texture_normal = preload("res://assets/textures/onscreenkeyboard_button.png")
+	btn_onscreen_keyboard.anchor_left = 0.5
+	btn_onscreen_keyboard.anchor_right = 0.5
+	btn_onscreen_keyboard.margin_left = -90
+	btn_onscreen_keyboard.margin_top = 865
+	btn_onscreen_keyboard.margin_right = 90
+	btn_onscreen_keyboard.margin_bottom = 1045
+	btn_onscreen_keyboard.expand = true
+	btn_onscreen_keyboard.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	btn_onscreen_keyboard.connect("pressed", self, "_on_OnscreenKeyboard_toggled")
+	claim_profile_panel.add_child(btn_onscreen_keyboard)
+	
+	indicator_arrow = Label.new()
+	indicator_arrow.text = "▼"
+	indicator_arrow.visible = false
+	indicator_arrow.add_color_override("font_color", Color(0.4, 0.8, 0.2)) # Green arrow
+	var arrow_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
+	if arrow_font:
+		arrow_font.size = 36
+		arrow_font.use_filter = true
+		indicator_arrow.add_font_override("font", arrow_font)
+	indicator_arrow.anchor_left = 1.0
+	indicator_arrow.anchor_top = 1.0
+	indicator_arrow.anchor_right = 1.0
+	indicator_arrow.anchor_bottom = 1.0
+	indicator_arrow.margin_left = -30
+	indicator_arrow.margin_top = -40
+	indicator_arrow.margin_right = 0
+	indicator_arrow.margin_bottom = 0
+	btn_onscreen_keyboard.add_child(indicator_arrow)
+	
+	lbl_onscreen_keyboard = Label.new()
+	lbl_onscreen_keyboard.text = "ON SCREEN KEYBOARD"
+	lbl_onscreen_keyboard.align = Label.ALIGN_CENTER
+	lbl_onscreen_keyboard.anchor_left = 0.5
+	lbl_onscreen_keyboard.anchor_right = 0.5
+	lbl_onscreen_keyboard.margin_left = -200
+	lbl_onscreen_keyboard.margin_top = 1055
+	lbl_onscreen_keyboard.margin_right = 200
+	lbl_onscreen_keyboard.margin_bottom = 1095
+	var lilita = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	if lilita:
+		var lbl_font = DynamicFont.new()
+		lbl_font.font_data = lilita
+		lbl_font.size = 28
+		lbl_font.outline_size = 3
+		lbl_font.outline_color = Color(0.15, 0.15, 0.15, 1)
+		lbl_font.use_filter = true
+		lbl_onscreen_keyboard.add_font_override("font", lbl_font)
+	claim_profile_panel.add_child(lbl_onscreen_keyboard)
+ 
+	var OnscreenKeyboardClass = load("res://addons/onscreenkeyboard/onscreen_keyboard.gd")
+	onscreen_keyboard = OnscreenKeyboardClass.new()
+	onscreen_keyboard.name = "OnscreenKeyboard"
+	onscreen_keyboard.autoShow = false
+	onscreen_keyboard.custom_show_y = -1.0
+	onscreen_keyboard.custom_hide_y = -1.0
+	
+	# Apply aesthetic styles matching the game theme
+	var bg_style = StyleBoxFlat.new()
+	bg_style.bg_color = Color(0.08, 0.1, 0.16, 0.95)
+	bg_style.corner_radius_top_left = 24
+	bg_style.corner_radius_top_right = 24
+	bg_style.border_width_top = 4
+	bg_style.border_color = Color(0.15, 0.2, 0.35, 0.8)
+	onscreen_keyboard.styleBackground = bg_style
+	
+	var normal = StyleBoxFlat.new()
+	normal.bg_color = Color(0.18, 0.22, 0.3, 0.95)
+	normal.corner_radius_top_left = 16
+	normal.corner_radius_top_right = 16
+	normal.corner_radius_bottom_right = 16
+	normal.corner_radius_bottom_left = 16
+	normal.border_width_bottom = 6
+	normal.border_color = Color(0.1, 0.12, 0.18)
+	normal.shadow_color = Color(0, 0, 0, 0.25)
+	normal.shadow_size = 2
+	normal.shadow_offset = Vector2(0, 2)
+	onscreen_keyboard.styleNormal = normal
+	
+	var hover = normal.duplicate()
+	hover.bg_color = Color(0.22, 0.28, 0.38)
+	hover.border_color = Color(0.12, 0.16, 0.22)
+	onscreen_keyboard.styleHover = hover
+	
+	var pressed = normal.duplicate()
+	pressed.bg_color = Color(0.12, 0.15, 0.22)
+	pressed.border_width_top = 3
+	pressed.border_width_bottom = 3
+	pressed.border_color = Color(0.08, 0.1, 0.15)
+	onscreen_keyboard.stylePressed = pressed
+	
+	var special = StyleBoxFlat.new()
+	special.bg_color = Color(0.12, 0.15, 0.22, 0.95)
+	special.corner_radius_top_left = 16
+	special.corner_radius_top_right = 16
+	special.corner_radius_bottom_right = 16
+	special.corner_radius_bottom_left = 16
+	special.border_width_bottom = 6
+	special.border_color = Color(0.06, 0.08, 0.12)
+	special.shadow_color = Color(0, 0, 0, 0.25)
+	special.shadow_size = 2
+	special.shadow_offset = Vector2(0, 2)
+	onscreen_keyboard.styleSpecialKeys = special
+	
+	lilita = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	if lilita:
+		var key_font = DynamicFont.new()
+		key_font.font_data = lilita
+		key_font.size = 52
+		key_font.use_filter = true
+		onscreen_keyboard.font = key_font
+	
+	onscreen_keyboard.fontColor = Color(1, 1, 1)
+	onscreen_keyboard.fontColorHover = Color(1, 1, 1)
+	onscreen_keyboard.fontColorPressed = Color(1, 1, 1)
+	
+	onscreen_keyboard.bottom_safety_margin = 80.0
+	onscreen_keyboard.side_margin = 16.0
+	onscreen_keyboard.anchor_left = 0.0
+	onscreen_keyboard.anchor_right = 1.0
+	onscreen_keyboard.anchor_top = 0.0
+	onscreen_keyboard.anchor_bottom = 0.0
+	onscreen_keyboard.margin_left = 0
+	onscreen_keyboard.margin_top = 0
+	onscreen_keyboard.margin_right = 0
+	onscreen_keyboard.margin_bottom = 850
+	$UI/Control.add_child(onscreen_keyboard)
+	onscreen_keyboard.hide()
+	onscreen_keyboard.visible = false
+	onscreen_keyboard.connect("visibilityChanged", self, "_on_onscreen_keyboard_visibility_changed")
+	onscreen_keyboard.connect("key_released", self, "_on_onscreen_keyboard_key_released")
+	
+	# Active field indicator label
+	lbl_active_field = Label.new()
+	lbl_active_field.name = "ActiveFieldLabel"
+	lbl_active_field.text = "Editing: Email Address"
+	lbl_active_field.align = Label.ALIGN_LEFT
+	lbl_active_field.anchor_left = 0.0
+	lbl_active_field.margin_left = 30
+	lbl_active_field.margin_top = 28
+	lbl_active_field.margin_bottom = 83
+	
+	if lilita:
+		var active_field_font = DynamicFont.new()
+		active_field_font.font_data = lilita
+		active_field_font.size = 36
+		active_field_font.outline_size = 2
+		active_field_font.outline_color = Color(0.1, 0.1, 0.15, 1)
+		active_field_font.use_filter = true
+		lbl_active_field.add_font_override("font", active_field_font)
+	onscreen_keyboard.add_child(lbl_active_field)
+	
+	# Switch field button
+	btn_switch_field = Button.new()
+	btn_switch_field.name = "SwitchFieldButton"
+	btn_switch_field.text = "Switch Field"
+	btn_switch_field.anchor_left = 1.0
+	btn_switch_field.anchor_right = 1.0
+	btn_switch_field.margin_left = -280
+	btn_switch_field.margin_right = -30
+	btn_switch_field.margin_top = 15
+	btn_switch_field.margin_bottom = 85
+	
+	# Style the Switch Field button to match the game button style (blue/slate theme)
+	var blue_normal = StyleBoxFlat.new()
+	blue_normal.bg_color = Color(0.2, 0.45, 0.75)
+	blue_normal.anti_aliasing = true
+	blue_normal.corner_radius_top_left = 16
+	blue_normal.corner_radius_top_right = 16
+	blue_normal.corner_radius_bottom_right = 16
+	blue_normal.corner_radius_bottom_left = 16
+	blue_normal.border_width_bottom = 6
+	blue_normal.border_color = Color(0.12, 0.28, 0.5)
+	blue_normal.content_margin_left = 16
+	blue_normal.content_margin_right = 16
+	
+	var blue_hover = blue_normal.duplicate()
+	blue_hover.bg_color = Color(0.25, 0.55, 0.85)
+	blue_hover.border_color = Color(0.15, 0.35, 0.6)
+	
+	var blue_pressed = blue_normal.duplicate()
+	blue_pressed.bg_color = Color(0.15, 0.35, 0.6)
+	blue_pressed.border_width_top = 2
+	blue_pressed.border_width_bottom = 2
+	blue_pressed.border_color = Color(0.1, 0.22, 0.4)
+	
+	btn_switch_field.add_stylebox_override("normal", blue_normal)
+	btn_switch_field.add_stylebox_override("hover", blue_hover)
+	btn_switch_field.add_stylebox_override("pressed", blue_pressed)
+	btn_switch_field.add_color_override("font_color", Color(1, 1, 1))
+	btn_switch_field.add_color_override("font_color_hover", Color(1, 1, 1))
+	btn_switch_field.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
+	
+	if lilita:
+		var switch_btn_font = DynamicFont.new()
+		switch_btn_font.font_data = lilita
+		switch_btn_font.size = 34
+		switch_btn_font.outline_size = 2
+		switch_btn_font.outline_color = Color(0.1, 0.1, 0.15, 1)
+		switch_btn_font.use_filter = true
+		btn_switch_field.add_font_override("font", switch_btn_font)
+		
+	btn_switch_field.connect("pressed", self, "_on_SwitchField_pressed")
+	onscreen_keyboard.add_child(btn_switch_field)
+
+	
+	# Platform specific visibility
 	if OS.has_feature("JavaScript") or OS.get_name() == "HTML5" or OS.get_name() == "Android":
 		btn_google_claim.visible = false
-		btn_cancel.margin_top = 900
-		btn_cancel.margin_bottom = 1000
 	else:
 		btn_google_claim.visible = true
-		btn_google_claim.margin_top = 880
-		btn_google_claim.margin_bottom = 980
-		btn_cancel.margin_top = 1020
-		btn_cancel.margin_bottom = 1120
+		
+	btn_cancel_claim.visible = true
 	
+	_update_onscreen_keyboard_visibility()
 	$UI/Control.add_child(claim_profile_panel)
 	
 func _create_conflict_panel():
@@ -3683,11 +3993,310 @@ func _on_ClaimProfile_pressed():
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node:
 		profile_panel_node.hide()
+	if is_instance_valid(onscreen_keyboard):
+		onscreen_keyboard.visible = false
+		onscreen_keyboard.rect_position.y = get_viewport().get_visible_rect().size.y + 10
 	claim_profile_panel.visible = true
+
+# Reposition buttons vertically on Claim Profile panel to prevent blank gaps when toggle is hidden
+func _reposition_claim_profile_buttons():
+	if not is_instance_valid(claim_profile_panel):
+		return
+		
+	var current_y = 850.0
+	
+	if is_instance_valid(btn_google_claim):
+		if btn_google_claim.visible:
+			btn_google_claim.margin_top = current_y
+			btn_google_claim.margin_bottom = current_y + 100.0
+			current_y += 125.0
+			
+	if is_instance_valid(btn_cancel_claim):
+		if btn_cancel_claim.visible:
+			btn_cancel_claim.margin_top = current_y
+			btn_cancel_claim.margin_bottom = current_y + 100.0
+			current_y += 125.0
+			
+	var ok_active = _is_onscreen_keyboard_active()
+	if is_instance_valid(btn_onscreen_keyboard):
+		btn_onscreen_keyboard.visible = ok_active
+		if ok_active:
+			btn_onscreen_keyboard.margin_top = current_y
+			btn_onscreen_keyboard.margin_bottom = current_y + 150.0
+			current_y += 160.0
+			
+	if is_instance_valid(lbl_onscreen_keyboard):
+		lbl_onscreen_keyboard.visible = ok_active
+		if ok_active:
+			lbl_onscreen_keyboard.margin_top = current_y
+			lbl_onscreen_keyboard.margin_bottom = current_y + 40.0
+
+# Differentiate PC browsers/builds from mobile/tablet devices via user-agent or OS name
+func _is_pc_device() -> bool:
+	var is_pc = OS.get_name() in ["Windows", "OSX", "X11"]
+	if OS.has_feature("HTML5") or OS.has_feature("JavaScript"):
+		var js_is_desktop = JavaScript.eval("/Windows|Macintosh|Linux/i.test(navigator.userAgent) && !/Mobi|Android|Tablet|iPad|iPhone/i.test(navigator.userAgent)")
+		if js_is_desktop:
+			is_pc = true
+		else:
+			is_pc = false
+	return is_pc
+
+# Determine if custom onscreen keyboard should be used
+# - Native mobile (Android/iOS): always false (uses OS keyboard)
+# - Web mobile: always true (in-game keyboard avoids iframe focus issues)
+# - PC (Web & Native): respects user setting toggle (off by default)
+func _is_onscreen_keyboard_active() -> bool:
+	if OS.get_name() in ["Android", "iOS"]:
+		return false
+	if not _is_pc_device():
+		return true
+	return onscreen_keyboard_setting_enabled
+
+func _update_onscreen_keyboard_visibility():
+	var ok_active = _is_onscreen_keyboard_active()
+	
+	_reposition_claim_profile_buttons()
+
+	var target_focus = Control.FOCUS_NONE if ok_active else Control.FOCUS_ALL
+	if is_instance_valid(claim_email_input):
+		claim_email_input.virtual_keyboard_enabled = not ok_active
+		claim_email_input.focus_mode = target_focus
+	if is_instance_valid(claim_pass_input):
+		claim_pass_input.virtual_keyboard_enabled = not ok_active
+		claim_pass_input.focus_mode = target_focus
+	if is_instance_valid(name_input):
+		name_input.virtual_keyboard_enabled = not ok_active
+		name_input.focus_mode = target_focus
+	if is_instance_valid(game_over_name_input):
+		game_over_name_input.virtual_keyboard_enabled = not ok_active
+		game_over_name_input.focus_mode = target_focus
+	
+	if not ok_active:
+		_close_onscreen_keyboard()
+		if is_instance_valid(onscreen_keyboard):
+			onscreen_keyboard.visible = false
+
+func _on_KeyboardToggle_toggled(button_pressed: bool):
+	onscreen_keyboard_setting_enabled = button_pressed
+	_update_onscreen_keyboard_visibility()
+	save_hiscore(false)
+	if is_instance_valid(ui_button_click):
+		ui_button_click.play()
+
+func _open_onscreen_keyboard_for_field(field: LineEdit):
+	if not is_instance_valid(onscreen_keyboard):
+		return
+		
+	var ok_active = _is_onscreen_keyboard_active()
+	if not ok_active:
+		return
+		
+	var focus_owner = $UI/Control.get_focus_owner() if is_instance_valid($UI/Control) else null
+	if focus_owner:
+		focus_owner.release_focus()
+		
+	OS.hide_virtual_keyboard()
+	
+	if is_instance_valid(claim_email_input):
+		claim_email_input.virtual_keyboard_enabled = false
+		claim_email_input.focus_mode = Control.FOCUS_NONE
+	if is_instance_valid(claim_pass_input):
+		claim_pass_input.virtual_keyboard_enabled = false
+		claim_pass_input.focus_mode = Control.FOCUS_NONE
+	if is_instance_valid(name_input):
+		name_input.virtual_keyboard_enabled = false
+		name_input.focus_mode = Control.FOCUS_NONE
+	if is_instance_valid(game_over_name_input):
+		game_over_name_input.virtual_keyboard_enabled = false
+		game_over_name_input.focus_mode = Control.FOCUS_NONE
+		
+	onscreen_keyboard.visible = true
+	onscreen_keyboard.raise()
+	onscreen_keyboard.show()
+	
+	if is_instance_valid(indicator_arrow):
+		indicator_arrow.visible = (field == claim_email_input or field == claim_pass_input)
+	if is_instance_valid(btn_onscreen_keyboard):
+		btn_onscreen_keyboard.modulate = Color(0.7, 1.0, 0.7) if (field == claim_email_input or field == claim_pass_input) else Color(1, 1, 1)
+		
+	# On web builds, hide cancel button because it overlaps with the keyboard.
+	if OS.has_feature("JavaScript") or OS.get_name() == "HTML5":
+		if is_instance_valid(btn_cancel_claim):
+			btn_cancel_claim.visible = false
+			
+	if is_instance_valid(game_over_name_prompt) and field == game_over_name_input:
+		game_over_name_prompt.margin_top = -430
+		game_over_name_prompt.margin_bottom = 70
+			
+	_set_active_onscreen_keyboard_field(field)
+	_reposition_claim_profile_buttons()
+
+func _on_OnscreenKeyboard_toggled():
+	if is_instance_valid(ui_button_click):
+		ui_button_click.play()
+	var viewport_h = get_viewport().get_visible_rect().size.y
+	var is_open = onscreen_keyboard.rect_position.y < (viewport_h - 50) and onscreen_keyboard.visible
+	if not is_open:
+		var target_field = claim_email_input
+		if active_onscreen_keyboard_field == claim_pass_input:
+			target_field = claim_pass_input
+		_open_onscreen_keyboard_for_field(target_field)
+	else:
+		_close_onscreen_keyboard()
+
+func _close_onscreen_keyboard():
+	active_onscreen_keyboard_field = null
+	
+	if is_instance_valid(game_over_name_prompt):
+		game_over_name_prompt.margin_top = -250
+		game_over_name_prompt.margin_bottom = 250
+	
+	var target_focus = Control.FOCUS_NONE if _is_onscreen_keyboard_active() else Control.FOCUS_ALL
+	
+	if is_instance_valid(claim_email_input):
+		claim_email_input.focus_mode = target_focus
+		claim_email_input.add_stylebox_override("normal", line_edit_style)
+	if is_instance_valid(claim_pass_input):
+		claim_pass_input.focus_mode = target_focus
+		claim_pass_input.add_stylebox_override("normal", line_edit_style)
+	if is_instance_valid(name_input):
+		name_input.focus_mode = target_focus
+		name_input.add_stylebox_override("normal", line_edit_style)
+	if is_instance_valid(game_over_name_input):
+		game_over_name_input.focus_mode = target_focus
+		game_over_name_input.add_stylebox_override("normal", game_over_input_style)
+		game_over_name_input.align = LineEdit.ALIGN_CENTER
+		
+	if is_instance_valid(indicator_arrow):
+		indicator_arrow.visible = false
+	if is_instance_valid(btn_onscreen_keyboard):
+		btn_onscreen_keyboard.modulate = Color(1, 1, 1)
+	if is_instance_valid(btn_cancel_claim):
+		btn_cancel_claim.visible = true
+	if is_instance_valid(btn_google_claim):
+		if not (OS.has_feature("JavaScript") or OS.get_name() == "HTML5" or OS.get_name() == "Android"):
+			btn_google_claim.visible = true
+			
+	_reposition_claim_profile_buttons()
+	if is_instance_valid(onscreen_keyboard):
+		onscreen_keyboard.active_field = null
+	if is_instance_valid(onscreen_keyboard):
+		onscreen_keyboard.hide()
+		# Wait for the slide-down animation to complete before setting visible to false
+		var t = get_tree().create_timer(0.25)
+		yield(t, "timeout")
+		if is_instance_valid(onscreen_keyboard) and active_onscreen_keyboard_field == null:
+			onscreen_keyboard.visible = false
+
+func _on_onscreen_keyboard_visibility_changed(is_visible: bool):
+	if not is_visible and active_onscreen_keyboard_field != null:
+		_close_onscreen_keyboard()
+
+func _set_active_onscreen_keyboard_field(field: LineEdit):
+	active_onscreen_keyboard_field = field
+	if is_instance_valid(lbl_active_field):
+		if field == claim_email_input:
+			lbl_active_field.text = "Editing: Email Address"
+		elif field == claim_pass_input:
+			lbl_active_field.text = "Editing: Password"
+		elif field == name_input or field == game_over_name_input:
+			lbl_active_field.text = "Editing: Player Name"
+			
+	# Update visual focus border styles
+	if is_instance_valid(claim_email_input) and is_instance_valid(claim_pass_input):
+		if field == claim_email_input:
+			claim_email_input.add_stylebox_override("normal", line_edit_focus)
+			claim_pass_input.add_stylebox_override("normal", line_edit_style)
+		elif field == claim_pass_input:
+			claim_email_input.add_stylebox_override("normal", line_edit_style)
+			claim_pass_input.add_stylebox_override("normal", line_edit_focus)
+		else:
+			claim_email_input.add_stylebox_override("normal", line_edit_style)
+			claim_pass_input.add_stylebox_override("normal", line_edit_style)
+			
+	if is_instance_valid(name_input):
+		if field == name_input:
+			name_input.add_stylebox_override("normal", line_edit_focus)
+		else:
+			name_input.add_stylebox_override("normal", line_edit_style)
+			
+	if is_instance_valid(game_over_name_input):
+		if field == game_over_name_input:
+			game_over_name_input.add_stylebox_override("normal", game_over_input_focus)
+		else:
+			game_over_name_input.add_stylebox_override("normal", game_over_input_style)
+			
+	var ok_active = _is_onscreen_keyboard_active()
+	if ok_active:
+		var focus_owner = $UI/Control.get_focus_owner() if is_instance_valid($UI/Control) else null
+		if focus_owner:
+			focus_owner.release_focus()
+	else:
+		if is_instance_valid(field) and not field.has_focus():
+			field.grab_focus()
+			
+	if is_instance_valid(onscreen_keyboard):
+		onscreen_keyboard.active_field = field
+func _on_input_focus_entered(field: LineEdit):
+	var ok_active = _is_onscreen_keyboard_active()
+	if ok_active:
+		field.release_focus()
+		return
+		
+	active_onscreen_keyboard_field = field
+	if is_instance_valid(lbl_active_field):
+		if field == claim_email_input:
+			lbl_active_field.text = "Editing: Email Address"
+		elif field == claim_pass_input:
+			lbl_active_field.text = "Editing: Password"
+		elif field == name_input or field == game_over_name_input:
+			lbl_active_field.text = "Editing: Player Name"
+
+func _on_SwitchField_pressed():
+	if is_instance_valid(ui_button_click):
+		ui_button_click.play()
+	if active_onscreen_keyboard_field == claim_email_input:
+		_set_active_onscreen_keyboard_field(claim_pass_input)
+	elif active_onscreen_keyboard_field == claim_pass_input:
+		_set_active_onscreen_keyboard_field(claim_email_input)
+
+func _on_LineEdit_gui_input(event: InputEvent, field: LineEdit):
+	if event is InputEventMouseButton and event.pressed and event.button_index == BUTTON_LEFT:
+		var ok_active = _is_onscreen_keyboard_active()
+		if ok_active:
+			_open_onscreen_keyboard_for_field(field)
+			if is_instance_valid(onscreen_keyboard):
+				onscreen_keyboard.handle_input_click(field, event.position.x)
+
+func _on_onscreen_keyboard_key_released(key_value: String):
+	if not is_instance_valid(active_onscreen_keyboard_field):
+		return
+		
+	var field = active_onscreen_keyboard_field
+	if key_value == "Return":
+		if field == claim_email_input:
+			_set_active_onscreen_keyboard_field(claim_pass_input)
+		elif field == claim_pass_input:
+			_on_SubmitClaim_pressed()
+		elif field == name_input:
+			_on_name_submit_pressed()
+		elif field == game_over_name_input:
+			_on_submit_name_pressed()
+
+func _on_Email_text_entered(_new_text):
+	if _is_onscreen_keyboard_active():
+		_set_active_onscreen_keyboard_field(claim_pass_input)
+	else:
+		claim_pass_input.grab_focus()
+
+func _on_Password_text_entered(_new_text):
+	_on_SubmitClaim_pressed()
 
 func _on_CancelClaim_pressed():
 	if is_instance_valid(ui_button_click):
 		ui_button_click.play()
+	_close_onscreen_keyboard()
 	claim_profile_panel.visible = false
 	var profile_panel_node = $UI/Control.get_node_or_null("ProfilePanel")
 	if profile_panel_node:
@@ -3698,11 +4307,13 @@ func _on_SubmitClaim_pressed():
 	var password = claim_pass_input.text.strip_edges()
 	if email == "" or password == "":
 		return
+	_close_onscreen_keyboard()
 	FirebaseManager.start_profile_claim_email(email, password, player_data)
 	claim_profile_panel.visible = false
 	_show_loading("Linking Account...")
 
 func _on_GoogleClaim_pressed():
+	_close_onscreen_keyboard()
 	FirebaseManager.start_google_login(player_data)
 	claim_profile_panel.visible = false
 	_show_loading("Linking Account...")
@@ -3952,23 +4563,6 @@ func _create_manage_account_panel():
 	input_font.outline_size = 2
 	input_font.outline_color = Color(0.1, 0.1, 0.1, 0.8)
 	
-	var line_edit_style = StyleBoxFlat.new()
-	line_edit_style.bg_color = Color(0.1, 0.1, 0.15, 0.9) # Dark blue/grey input box
-	line_edit_style.border_width_left = 3
-	line_edit_style.border_width_top = 3
-	line_edit_style.border_width_right = 3
-	line_edit_style.border_width_bottom = 3
-	line_edit_style.border_color = Color(0.2, 0.2, 0.3)
-	line_edit_style.corner_radius_top_left = 20
-	line_edit_style.corner_radius_top_right = 20
-	line_edit_style.corner_radius_bottom_right = 20
-	line_edit_style.corner_radius_bottom_left = 20
-	line_edit_style.content_margin_left = 30
-	line_edit_style.content_margin_right = 30
-	
-	var line_edit_focus = line_edit_style.duplicate()
-	line_edit_focus.border_color = Color(0.4, 0.8, 0.2) # Active green border on focus
-
 	name_input = LineEdit.new()
 	name_input.max_length = 20
 	name_input.placeholder_text = "Enter name..."
@@ -3989,6 +4583,7 @@ func _create_manage_account_panel():
 	name_input.connect("text_changed", self, "_on_name_input_changed")
 	name_input.connect("text_entered", self, "_on_name_input_entered")
 	name_input.connect("focus_exited", self, "_on_name_input_focus_exited")
+	name_input.connect("gui_input", self, "_on_LineEdit_gui_input", [name_input])
 	manage_account_panel.add_child(name_input)
 	
 	# Player Name Submit Button

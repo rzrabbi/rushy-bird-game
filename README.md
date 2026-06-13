@@ -135,8 +135,23 @@ To prevent cheating and protect leaderboard integrity, the database uses strict 
 - **Game Config:** Firebase authentication and project settings are read from `.env` located at `res://addons/godot-firebase/.env`. If this file is missing, execution falls back to offline mode with local save data. An [example.env](addons/godot-firebase/example.env) is included as a reference.
 - **Export Packaging:** The `.env` configuration file is automatically packaged into the exported PCK archive during builds using the built-in non-resource export filters (`include_filter="*.env"`) defined in `export_presets.cfg`. This ensures Firebase configurations are securely bundled with the game binary for production exports without needing custom packaging scripts.
 
+# Web Build & IFrame Considerations (e.g., itch.io)
+
+When running the Web (HTML5) build inside an `iframe` on platforms like itch.io, certain browser security sandbox restrictions apply:
+
+- **Keyboard Input on Mobile**: Native mobile virtual keyboards fail to trigger, display, or register key inputs correctly inside cross-origin iframes. To solve this, a custom in-game slide-up **On-Screen Keyboard** handles input fields (`claim_email_input`, `claim_pass_input`, `name_input`, `game_over_name_input`).
+  - **Mobile Detection**: Evaluates `navigator.userAgent` via `JavaScript.eval` to distinguish mobile web browsers from desktop web browsers.
+  - **OS Keyboard Prevention**: Blocks native keyboards by setting focus mode to `Control.FOCUS_NONE` and disabling virtual keyboards (`virtual_keyboard_enabled = false`) on input fields, manually handling caret position and text manipulation.
+  - **Platform Rules**:
+    - **Mobile (Web HTML5)**: On-screen keyboard auto-activates by default (no toggle).
+    - **Native Mobile (Android/iOS)**: On-screen keyboard is completely disabled to let native OS keyboard handle inputs.
+    - **PC (Native Windows/Linux/Mac & Web PC)**: On-screen keyboard is disabled by default, but players can manually enable it via the "On-Screen Keyboard" settings toggle.
+- **Disabled Google Login**: Google OAuth authentication popups do not function properly inside cross-origin iframes due to browser security restrictions. Therefore, Google Sign-In is disabled on Web builds, and players should use the Email/Password option to claim and link their accounts.
+
+
 # Special Thanks
 
 A massive thank you to **Johnny Rouddro** for introducing me to the Godot Engine and game development in general. His guidance in setting up the project and helping write initial and early prototype code was invaluable to this first step of my journey.
 
 Many thanks as well to **Borna Barua** for creating the fantastic art and assets for this game.
+

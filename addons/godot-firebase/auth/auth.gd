@@ -268,8 +268,6 @@ func login_with_custom_token(token : String) -> void:
 # Once given user's authorization, a token will be generated.
 # NOTE** the generated token will be automatically captured and a login request will be made if the token is correct
 func get_auth_localhost(provider: AuthProvider = get_GoogleProvider(), port : int = _local_port):
-	get_auth_with_redirect(provider)
-	yield(get_tree().create_timer(0.5),"timeout")
 	if has_child == false:
 		add_child(tcp_timer)
 		has_child = true
@@ -277,6 +275,7 @@ func get_auth_localhost(provider: AuthProvider = get_GoogleProvider(), port : in
 		tcp_server.listen(port, "*")
 		tcp_start_time = OS.get_unix_time()
 		print("[Firebase Auth] Started local redirect TCP listener on port ", port, ".")
+	get_auth_with_redirect(provider)
 
 
 func get_auth_with_redirect(provider: AuthProvider) -> void:
