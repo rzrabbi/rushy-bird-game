@@ -3375,59 +3375,7 @@ func _create_claim_profile_panel():
 	btn_cancel_claim.add_color_override("font_color_hover", Color(1, 1, 1))
 	btn_cancel_claim.add_color_override("font_color_pressed", Color(0.9, 0.9, 0.9))
 	claim_profile_panel.add_child(btn_cancel_claim)
-	
-	# ON SCREEN KEYBOARD button and setup
-	btn_onscreen_keyboard = TextureButton.new()
-	btn_onscreen_keyboard.texture_normal = preload("res://assets/textures/onscreenkeyboard_button.png")
-	btn_onscreen_keyboard.anchor_left = 0.5
-	btn_onscreen_keyboard.anchor_right = 0.5
-	btn_onscreen_keyboard.margin_left = -90
-	btn_onscreen_keyboard.margin_top = 865
-	btn_onscreen_keyboard.margin_right = 90
-	btn_onscreen_keyboard.margin_bottom = 1045
-	btn_onscreen_keyboard.expand = true
-	btn_onscreen_keyboard.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-	btn_onscreen_keyboard.connect("pressed", self, "_on_OnscreenKeyboard_toggled")
-	claim_profile_panel.add_child(btn_onscreen_keyboard)
-	
-	indicator_arrow = Label.new()
-	indicator_arrow.text = "▼"
-	indicator_arrow.visible = false
-	indicator_arrow.add_color_override("font_color", Color(0.4, 0.8, 0.2)) # Green arrow
-	var arrow_font = load("res://resources/Theme.tres").get_font("font", "Button").duplicate()
-	if arrow_font:
-		arrow_font.size = 36
-		arrow_font.use_filter = true
-		indicator_arrow.add_font_override("font", arrow_font)
-	indicator_arrow.anchor_left = 1.0
-	indicator_arrow.anchor_top = 1.0
-	indicator_arrow.anchor_right = 1.0
-	indicator_arrow.anchor_bottom = 1.0
-	indicator_arrow.margin_left = -30
-	indicator_arrow.margin_top = -40
-	indicator_arrow.margin_right = 0
-	indicator_arrow.margin_bottom = 0
-	btn_onscreen_keyboard.add_child(indicator_arrow)
-	
-	lbl_onscreen_keyboard = Label.new()
-	lbl_onscreen_keyboard.text = "ON SCREEN KEYBOARD"
-	lbl_onscreen_keyboard.align = Label.ALIGN_CENTER
-	lbl_onscreen_keyboard.anchor_left = 0.5
-	lbl_onscreen_keyboard.anchor_right = 0.5
-	lbl_onscreen_keyboard.margin_left = -200
-	lbl_onscreen_keyboard.margin_top = 1055
-	lbl_onscreen_keyboard.margin_right = 200
-	lbl_onscreen_keyboard.margin_bottom = 1095
 	var lilita = load("res://assets/fonts/LilitaOne-Regular.ttf")
-	if lilita:
-		var lbl_font = DynamicFont.new()
-		lbl_font.font_data = lilita
-		lbl_font.size = 28
-		lbl_font.outline_size = 3
-		lbl_font.outline_color = Color(0.15, 0.15, 0.15, 1)
-		lbl_font.use_filter = true
-		lbl_onscreen_keyboard.add_font_override("font", lbl_font)
-	claim_profile_panel.add_child(lbl_onscreen_keyboard)
  
 	var OnscreenKeyboardClass = load("res://addons/onscreenkeyboard/onscreen_keyboard.gd")
 	onscreen_keyboard = OnscreenKeyboardClass.new()
@@ -4120,10 +4068,7 @@ func _open_onscreen_keyboard_for_field(field: LineEdit):
 	if is_instance_valid(btn_onscreen_keyboard):
 		btn_onscreen_keyboard.modulate = Color(0.7, 1.0, 0.7) if (field == claim_email_input or field == claim_pass_input) else Color(1, 1, 1)
 		
-	# On web builds, hide cancel button because it overlaps with the keyboard.
-	if OS.has_feature("JavaScript") or OS.get_name() == "HTML5":
-		if is_instance_valid(btn_cancel_claim):
-			btn_cancel_claim.visible = false
+
 			
 	if is_instance_valid(game_over_name_prompt) and field == game_over_name_input:
 		game_over_name_prompt.margin_top = -430
