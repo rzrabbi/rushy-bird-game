@@ -216,7 +216,7 @@ static func is_field_timestamp(field : Dictionary) -> bool:
 # This appears to be caused by the gzip compression being unsupported, so we
 # disable it when web export is detected.
 static func fix_http_request(http_request):
-	if is_web():
+	if is_web() and "accept_gzip" in http_request:
 		http_request.accept_gzip = false
 
 static func is_web() -> bool:

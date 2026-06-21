@@ -4,11 +4,14 @@ devlogs/
 
 .import/
 export_presets.cfg
+export_log.txt
 scripts/tools/
 addons/godot-firebase/.env
+export/
 
 .firebase/
 dashboard/
+netlify-page/
 
 graphify-out/
 .graphifyignore
@@ -16,4 +19,4 @@ graphify-out/
 *.bak
 *.log
 .DS_Store
-*.json
+build_number.cfg

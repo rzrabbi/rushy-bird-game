@@ -268,8 +268,6 @@ func login_with_custom_token(token : String) -> void:
 # Once given user's authorization, a token will be generated.
 # NOTE** the generated token will be automatically captured and a login request will be made if the token is correct
 func get_auth_localhost(provider: AuthProvider = get_GoogleProvider(), port : int = _local_port):
-	get_auth_with_redirect(provider)
-	yield(get_tree().create_timer(0.5),"timeout")
 	if has_child == false:
 		add_child(tcp_timer)
 		has_child = true
@@ -277,6 +275,7 @@ func get_auth_localhost(provider: AuthProvider = get_GoogleProvider(), port : in
 		tcp_server.listen(port, "*")
 		tcp_start_time = OS.get_unix_time()
 		print("[Firebase Auth] Started local redirect TCP listener on port ", port, ".")
+	get_auth_with_redirect(provider)
 
 
 func get_auth_with_redirect(provider: AuthProvider) -> void:
@@ -463,13 +462,21 @@ func _on_FirebaseAuth_request_completed(result : int, response_code : int, heade
 				Requests.EXCHANGE_TOKEN:
 					print("[Firebase Auth] Google OAuth token exchange completed successfully.")
 					emit_signal("token_exchanged", true)
-			begin_refresh_countdown()
+			if auth_request_type != 99:
+				begin_refresh_countdown()
 			# Refresh token countdown
 			emit_signal("auth_request", 1, auth)
 		else:
 			match res.kind:
-				RESPONSE_SIGNUP, "identitytoolkit#SetAccountInfoResponse":
+				RESPONSE_SIGNUP:
 					auth = get_clean_keys(res)
+					print("[Firebase Auth] Account registration successful.")
+					emit_signal("signup_succeeded", auth)
+					begin_refresh_countdown()
+				"identitytoolkit#SetAccountInfoResponse":
+					var cleaned_res = get_clean_keys(res)
+					for key in cleaned_res.keys():
+						auth[key] = cleaned_res[key]
 					print("[Firebase Auth] Account registration successful.")
 					emit_signal("signup_succeeded", auth)
 					begin_refresh_countdown()
@@ -607,6 +614,7 @@ func get_user_data() -> void:
 func delete_user_account() -> void:
 	if _is_ready():
 		is_busy = true
+		auth_request_type = 99
 		request(_base_url + _delete_account_request_url, _headers, true, HTTPClient.METHOD_POST, JSON.print({"idToken":auth.idtoken}))
 
 

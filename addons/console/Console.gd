@@ -222,8 +222,14 @@ func _ready():
 		add_command_autocomplete_list("delete_guest", ["confirm"])
 
 
+func _is_mobile_web_device() -> bool:
+	if OS.has_feature("HTML5") or OS.has_feature("JavaScript"):
+		var js_is_desktop = JavaScript.eval("/Windows|Macintosh|Linux/i.test(navigator.userAgent) && !/Mobi|Android|Tablet|iPad|iPhone/i.test(navigator.userAgent)")
+		return not js_is_desktop
+	return false
+
 func handle_mobile_tap(pos: Vector2):
-	if control.visible:
+	if _is_mobile_web_device() or control.visible:
 		return
 	if pos.x <= 200 and pos.y <= 200:
 		var current_time = OS.get_ticks_msec()
@@ -239,6 +245,9 @@ func handle_mobile_tap(pos: Vector2):
 
 
 func _input(event : InputEvent):
+	if _is_mobile_web_device():
+		return
+		
 	if event is InputEventScreenTouch and event.pressed:
 		if control.visible:
 			var line_edit_bottom = line_edit.rect_global_position.y + line_edit.rect_size.y
@@ -294,6 +303,9 @@ func _input(event : InputEvent):
 
 
 func toggle_console():
+	if _is_mobile_web_device():
+		return
+		
 	if not control.visible:
 		var main_node = get_tree().root.get_node_or_null("Main")
 		if is_instance_valid(main_node) and main_node.mode_level == 1:
@@ -622,7 +634,7 @@ func cmd_volume(target_str: String = "", val_str: String = ""):
 		var raw_db = linear2db(linear_val) if linear_val > 0.001 else -80.0
 		var db = raw_db - 10.0 if raw_db > -79.0 else -80.0
 		if is_instance_valid(main_node.main_menu_bgm):
-			main_node.main_menu_bgm.volume_db = db
+			main_node.main_menu_bgm.set_volume_db(db)
 		
 		# Sync SettingsPanel Slider if open
 		if is_instance_valid(main_node.settings_panel):
@@ -652,7 +664,7 @@ func cmd_mute():
 	if is_instance_valid(main_node):
 		main_node.music_volume = 0.0
 		if is_instance_valid(main_node.main_menu_bgm):
-			main_node.main_menu_bgm.volume_db = -80.0
+			main_node.main_menu_bgm.set_volume_db(-80.0)
 		
 		main_node.sfx_enabled = false
 		main_node._apply_sfx_volume()
@@ -678,7 +690,7 @@ func cmd_unmute():
 		var raw_db = linear2db(1.0)
 		var db = raw_db - 10.0
 		if is_instance_valid(main_node.main_menu_bgm):
-			main_node.main_menu_bgm.volume_db = db
+			main_node.main_menu_bgm.set_volume_db(db)
 			
 		main_node.sfx_enabled = true
 		main_node._apply_sfx_volume()

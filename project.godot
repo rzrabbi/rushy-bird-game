@@ -34,6 +34,16 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://addons/anima/core/tween.gd"
 }, {
+"base": "Node",
+"class": "AudioManage",
+"language": "GDScript",
+"path": "res://addons/WebAudioExternal/AudioManager.gd"
+}, {
+"base": "Node2D",
+"class": "AudioSpacial2D",
+"language": "GDScript",
+"path": "res://addons/WebAudioExternal/AudioSpacial2D.gd"
+}, {
 "base": "Reference",
 "class": "AuthProvider",
 "language": "GDScript",
@@ -139,6 +149,11 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://addons/gut/test.gd"
 }, {
+"base": "Node",
+"class": "JavascriptManage",
+"language": "GDScript",
+"path": "res://addons/WebAudioExternal/JavascriptManager.gd"
+}, {
 "base": "Reference",
 "class": "StorageReference",
 "language": "GDScript",
@@ -165,6 +180,8 @@ _global_script_class_icons={
 "AnimaNodesProperties": "",
 "AnimaStrings": "",
 "AnimaTween": "",
+"AudioManage": "",
+"AudioSpacial2D": "",
 "AuthProvider": "",
 "FacebookProvider": "",
 "FirebaseAuth": "",
@@ -186,6 +203,7 @@ _global_script_class_icons={
 "GoogleProvider": "",
 "GutHookScript": "",
 "GutTest": "",
+"JavascriptManage": "",
 "StorageReference": "",
 "StorageTask": "",
 "TwitterProvider": "",
@@ -215,11 +233,14 @@ Console="*res://addons/console/Console.gd"
 Anima="*res://addons/anima/core/anima.gd"
 Firebase="*res://addons/godot-firebase/firebase/firebase.tscn"
 FirebaseManager="*res://scripts/FirebaseManager.gd"
+JavascriptManager="*res://addons/WebAudioExternal/JavascriptManager.gd"
+AudioManager="*res://addons/WebAudioExternal/AudioManager.gd"
 
 [display]
 
 window/size/width=1080
 window/size/height=1920
+window/size/resizable=false
 window/size/test_width=422
 window/size/test_height=750
 window/dpi/allow_hidpi=true
@@ -229,7 +250,7 @@ window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/local-server/plugin.cfg" )
+enabled=PoolStringArray( "res://addons/FontAwesome5/plugin.cfg", "res://addons/WebAudioExternal/plugin.cfg", "res://addons/anima/plugin.cfg", "res://addons/build-tracker/plugin.cfg", "res://addons/console/plugin.cfg", "res://addons/godot-firebase/plugin.cfg", "res://addons/gut/plugin.cfg", "res://addons/http-sse-client/plugin.cfg", "res://addons/local-server/plugin.cfg", "res://addons/onscreenkeyboard/plugin.cfg" )
 
 [gui]
 
@@ -259,5 +280,6 @@ common/enable_pause_aware_picking=true
 [rendering]
 
 quality/driver/driver_name="GLES2"
+2d/snapping/use_gpu_pixel_snap=true
 vram_compression/import_etc=true
 environment/default_environment="res://resources/default_env.tres"

@@ -166,8 +166,9 @@ func _pooled_request(task : FirestoreTask) -> void:
 		Firebase._print("Unauthenticated request issued...")
 		Firebase.Auth.login_anonymous()
 		var result : Array = yield(Firebase.Auth, "auth_request")
-		if result[0] != 1:
-			_check_auth_error(result[0], result[1])
+		if typeof(result[0]) != TYPE_INT or result[0] != 1:
+			var err_code = int(result[0]) if typeof(result[0]) == TYPE_INT or typeof(result[0]) == TYPE_REAL or (typeof(result[0]) == TYPE_STRING and result[0].is_valid_integer()) else 0
+			_check_auth_error(err_code, str(result[1]) if result.size() > 1 else "")
 		Firebase._print("Client connected as Anonymous")
 
 	if not Firebase.emulating:
@@ -175,6 +176,9 @@ func _pooled_request(task : FirestoreTask) -> void:
 			task._headers = PoolStringArray([_AUTHORIZATION_HEADER + auth.idtoken])
 		else:
 			Firebase._printerr("Authentication missing or failed, cannot attach idtoken to request. Did you enable Anonymous Sign-in in Firebase Console?")
+			task.data = null
+			task.error = { "error": { "code": 400, "message": "Authentication missing" } }
+			task.emit_signal("task_finished")
 			return
 
 	var	http_request = HTTPRequest.new()

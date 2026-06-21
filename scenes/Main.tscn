@@ -44,9 +44,6 @@ albedo_texture = SubResource( 8 )
 [node name="Main" type="Spatial"]
 script = ExtResource( 2 )
 
-[node name="AutoScoreTimer" type="Timer" parent="."]
-wait_time = 2.0
-
 [node name="ScrollingPlatform" type="Spatial" parent="."]
 transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -30.845, 12 )
 script = ExtResource( 100 )
@@ -172,11 +169,5 @@ transform = Transform( -4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, 0, -21.
 [node name="background7" parent="bg" instance=ExtResource( 8 )]
 transform = Transform( -4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, 80, -21.235, 1.709 )
 
-[node name="Timer" type="Timer" parent="bg"]
-process_mode = 0
-wait_time = 6.7
-
-[connection signal="timeout" from="AutoScoreTimer" to="." method="_on_AutoScoreTImer_timeout"]
 [connection signal="body_entered" from="Bird" to="Bird" method="_on_Bird_body_entered"]
 [connection signal="timeout" from="ObstacleSpawner/SpawnDelay" to="ObstacleSpawner" method="_on_SpawnDelay_timeout"]
-[connection signal="timeout" from="bg/Timer" to="bg" method="_on_Timer_timeout"]
