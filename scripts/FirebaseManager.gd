@@ -356,8 +356,7 @@ func _upsert_doc(collection, uid, data, force_overwrite: bool = false) -> bool:
 			var local_name = data.get("player_name", "")
 			if cloud_name != null and cloud_name != "":
 				var is_local_default = local_name == "" or local_name.begins_with("Player")
-				var is_cloud_default = cloud_name.begins_with("Player")
-				if not is_cloud_default or is_local_default:
+				if is_local_default:
 					data["player_name"] = cloud_name
 					Global.player_name = cloud_name
 

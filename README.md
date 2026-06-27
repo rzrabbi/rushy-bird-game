@@ -1,7 +1,7 @@
 <h1 align="center">Rushy Bird</h1>
 
 <p align="center">
-  <a href="#" target="_blank">
+  <a href="https://rzrabbi.itch.io/rushy-bird" target="_blank">
     <img src="https://img.shields.io/badge/PLAY_NOW_ON-ITCH.IO-fa5c5c?style=for-the-badge&logo=itch.io&logoColor=white" alt="Play Game on itch.io" height="50" />
   </a>
 </p>
@@ -77,7 +77,7 @@ _Note: Additional commands are available for audio controls (`volume`, `mute`), 
 
 # Development Setup
 
-The source codebase is open for local compilation, modification, and execution. A hosted web build will be available for direct play on [itch.io](#) (coming soon).
+The source codebase is open for local compilation, modification, and execution. A hosted web build will be available for direct play on [itch.io](https://rzrabbi.itch.io/rushy-bird).
 
 ## Prerequisites
 

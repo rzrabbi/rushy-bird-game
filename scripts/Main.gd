@@ -1309,12 +1309,8 @@ func _process(delta):
 			
 	
 	if not game_playing and is_instance_valid(logo_rect) and logo_rect.visible:
-		if not game_over_panel.visible:
-			logo_rect.rect_rotation = sin(OS.get_ticks_msec() * 0.0004) * 0.5
-			logo_rect.rect_scale = Vector2(1.0, 1.0) + Vector2(1, 1) * sin(OS.get_ticks_msec() * 0.0005) * 0.005
-		else:
-			logo_rect.rect_rotation = 0.0
-			logo_rect.rect_scale = Vector2(1.0, 1.0)
+		logo_rect.rect_rotation = 0.0
+		logo_rect.rect_scale = Vector2(1.0, 1.0)
 
 func _on_ModeButton_pressed():
 	if is_instance_valid(ui_button_click):
@@ -2707,7 +2703,7 @@ var tex_close_button = preload("res://assets/textures/close_button.png")
 var tex_verified_badge = preload("res://assets/textures/verified_badge.png")
 var circle_bg_texture: ImageTexture
 
-const DEVELOPER_UID = "vggdawjfI2b7wheY7TlCw025IM12"
+const DEVELOPER_UID = "DJYXVxnCVPNuaY41LfWu2NQ4Nc53"
 var inspector_panel_node: Panel
 var inspector_avatar: TextureRect
 var inspector_name_label: Label
@@ -3367,6 +3363,7 @@ func _on_name_submit_pressed():
 	is_editing_name = false
 	_close_onscreen_keyboard()
 	_update_manage_account_name_ui()
+	_update_profile_panel()
 		
 	save_hiscore()
 	var current_hiscore = get_highscore(1)

@@ -2,15 +2,15 @@
 
 importer="texture"
 type="StreamTexture"
-path="res://.import/splash-web.png-208e8301e31d0814b37198c0c7cf054c.stex"
+path="res://.import/splash-web.webp-10e1bd1bfc0cf2dfb6f8f110b6ae0dae.stex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/brand/splash-web.png"
-dest_files=[ "res://.import/splash-web.png-208e8301e31d0814b37198c0c7cf054c.stex" ]
+source_file="res://assets/brand/splash-web.webp"
+dest_files=[ "res://.import/splash-web.webp-10e1bd1bfc0cf2dfb6f8f110b6ae0dae.stex" ]
 
 [params]
 

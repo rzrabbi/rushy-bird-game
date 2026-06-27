@@ -73,14 +73,14 @@ func _export_begin(features: PoolStringArray, is_debug: bool, path: String, flag
 		else:
 			printerr("Local Server: Failed to copy sounds directory, error code: " + str(copy_err))
 			
-		# Copy splash-web.png to the root of HTML5 export
-		var splash_src = "res://assets/brand/splash-web.png"
-		var splash_dest = base_dir + "/splash-web.png"
+		# Copy splash-web.webp to the root of HTML5 export
+		var splash_src = "res://assets/brand/splash-web.webp"
+		var splash_dest = base_dir + "/splash-web.webp"
 		var splash_err = dir.copy(splash_src, splash_dest)
 		if splash_err == OK:
-			print("Local Server: Successfully copied splash-web.png to HTML5 build root.")
+			print("Local Server: Successfully copied splash-web.webp to HTML5 build root.")
 		else:
-			printerr("Local Server: Failed to copy splash-web.png, error: " + str(splash_err))
+			printerr("Local Server: Failed to copy splash-web.webp, error: " + str(splash_err))
 
 
 func copy_dir(from_dir: String, to_dir: String) -> int:
